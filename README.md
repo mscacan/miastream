@@ -5,9 +5,9 @@ Mia Stream’i ücretsiz indir. Android APK ve macOS uygulaması açık. Kendi M
 ## Ücretsiz indir
 
 - [Android APK indir](https://msc.so/miastream.apk)
-- [macOS uygulamasını indir](https://msc.so/miastream.app)
+- [macOS uygulamasını indir](https://msc.so/mistreamapp.zip)
 
-macOS dosyası imzasızdır. İlk açılışta uygulamaya sağ tıklayıp Aç de.
+macOS dosyası zip içindedir. Zip’i aç, uygulamaya sağ tıklayıp Aç de. İmzasızdır.
 
 ## Ne yapar
 
@@ -42,9 +42,9 @@ Download Mia Stream for free. The Android APK and the macOS app are here. Add yo
 ## Free download
 
 - [Download the Android APK](https://msc.so/miastream.apk)
-- [Download the macOS app](https://msc.so/miastream.app)
+- [Download the macOS app](https://msc.so/mistreamapp.zip)
 
-The macOS file is unsigned. On first launch, right-click the app and choose Open.
+The macOS app is inside the zip. Unzip it, then right-click the app and choose Open. It is unsigned.
 
 ## What it does
 
