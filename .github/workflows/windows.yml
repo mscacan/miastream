@@ -1,0 +1,34 @@
+name: Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+      - run: flutter build windows --release
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          $release = "build/windows/x64/runner/Release"
+          tar -a -c -f miastreamexe.zip -C $release *
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: miastreamexe
+          path: miastreamexe.zip
+          if-no-files-found: error
