@@ -26,11 +26,11 @@ jobs:
           $release = Join-Path $env:GITHUB_WORKSPACE "build\windows\x64\runner\Release"
           New-Item -ItemType Directory -Force -Path pack | Out-Null
           & $seven a -mx=5 pack\payload.7z "$release\*"
-          Invoke-WebRequest -Uri "https://github.com/ip7z/7zip/releases/download/24.09/7z2409-extra.7z" -OutFile pack\extra.7z
-          & $seven x pack\extra.7z -opack\extra -y
-          $sfx = Get-ChildItem -Recurse pack\extra -Filter 7zSD.sfx | Select-Object -First 1
+          Invoke-WebRequest -Uri "https://github.com/ip7z/7zip/releases/download/24.09/lzma2409.7z" -OutFile pack\lzma.7z
+          & $seven x pack\lzma.7z -opack\lzma -y
+          $sfx = Get-ChildItem -Recurse pack\lzma -Filter 7zSD.sfx | Select-Object -First 1
           if (-not $sfx) { throw "7zSD.sfx not found" }
-          $config = ";!@Install@!UTF-8!`nTitle=`"Mia Stream`"`nGUIMode=`"2`"`nInstallPath=`"%LOCALAPPDATA%\MiaStream`"`nRunProgram=`"miastream.exe`"`n;!@InstallEnd@!`n"
+          $config = ";!@Install@!UTF-8!`nTitle=`"Mia Stream`"`nProgress=`"no`"`nRunProgram=`"miastream.exe`"`n;!@InstallEnd@!`n"
           $utf8 = New-Object System.Text.UTF8Encoding $false
           [System.IO.File]::WriteAllText("$pwd\pack\config.txt", $config, $utf8)
           cmd /c "copy /b `"$($sfx.FullName)`" + pack\config.txt + pack\payload.7z pack\MiaStream.exe"
