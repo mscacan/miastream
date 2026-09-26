@@ -8,7 +8,7 @@ Mia Stream’i ücretsiz indir. Android APK, macOS ve Windows uygulaması açık
 - macOS: https://msc.so/mistreamapp.zip
 - Windows: https://msc.so/miastreamexe.zip
 
-macOS dosyası zip içindedir. Zip’i aç, uygulamaya sağ tıklayıp Aç de. İmzasızdır. Windows dosyası da zip içindedir. Zip’i açıp uygulamayı çalıştır.
+macOS dosyası zip içindedir. Zip’i aç, uygulamaya sağ tıklayıp Aç de. İmzasızdır. Windows dosyası da zip içindedir. Zip’i aç, içindeki tek MiaStream.exe dosyasına tıkla.
 
 ## Ne yapar
 
@@ -48,7 +48,7 @@ Download Mia Stream for free. The Android APK, the macOS app, and the Windows ap
 - macOS: https://msc.so/mistreamapp.zip
 - Windows: https://msc.so/miastreamexe.zip
 
-The macOS app is inside the zip. Unzip it, then right-click the app and choose Open. It is unsigned. The Windows app is a zip too. Unzip it and run the app.
+The macOS app is inside the zip. Unzip it, then right-click the app and choose Open. It is unsigned. The Windows download is a zip with one file. Unzip it and open MiaStream.exe.
 
 ## What it does
 
