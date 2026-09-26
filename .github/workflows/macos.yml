@@ -1,0 +1,31 @@
+name: macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter config --enable-macos-desktop
+      - run: flutter pub get
+      - run: flutter build macos --release
+
+      - name: Zip
+        run: ditto -c -k --keepParent build/macos/Build/Products/Release/miastream.app mistreamapp.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mistreamapp
+          path: mistreamapp.zip
+          if-no-files-found: error
