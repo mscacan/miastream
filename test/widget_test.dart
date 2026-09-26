@@ -4,7 +4,7 @@ import 'package:miastream/app.dart';
 import 'package:miastream/features/browse/title_page.dart';
 import 'package:miastream/features/library/user_library.dart';
 import 'package:miastream/features/library/user_source.dart';
-import 'package:miastream/features/lounge/seat_store.dart';
+import 'package:miastream/features/library/keep_store.dart';
 import 'package:miastream/features/offline/download_store.dart';
 import 'package:miastream/features/playback/media_entry.dart';
 import 'package:miastream/features/playback/playback_bus.dart';
@@ -37,11 +37,6 @@ Future<void> _addSalon(WidgetTester tester) async {
   await tester.enterText(find.byType(TextField).at(1), 'https://ornek.invalid/liste.m3u');
   await tester.tap(find.widgetWithText(FilledButton, 'Kaydet'));
   await tester.pumpAndSettle();
-  final seat = find.text('Miran');
-  if (seat.evaluate().isNotEmpty) {
-    await tester.tap(seat.first);
-    await tester.pumpAndSettle();
-  }
 }
 
 void main() {
@@ -157,7 +152,7 @@ void main() {
           library: UserLibrary(loader: const _QuietLoader()),
           bus: PlaybackBus(),
           downloads: DownloadStore(),
-          seat: SeatStore(),
+          keeps: KeepStore(),
           link: LoungeLink(),
           similar: const [],
           onOpen: (_) {},

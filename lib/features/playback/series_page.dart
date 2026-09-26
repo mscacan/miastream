@@ -5,7 +5,7 @@ import '../browse/cover_art.dart';
 import '../browse/cover_store.dart';
 import '../library/user_library.dart';
 import '../library/user_source.dart';
-import '../lounge/seat_store.dart';
+import '../library/keep_store.dart';
 import 'media_entry.dart';
 import 'playback_bus.dart';
 import 'player_page.dart';
@@ -22,7 +22,7 @@ class SeriesPage extends StatefulWidget {
     this.entryId,
     this.library,
     this.bus,
-    this.seat,
+    this.keeps,
   });
 
   final SourceLoader loader;
@@ -33,7 +33,7 @@ class SeriesPage extends StatefulWidget {
   final String? entryId;
   final UserLibrary? library;
   final PlaybackBus? bus;
-  final SeatStore? seat;
+  final KeepStore? keeps;
 
   @override
   State<SeriesPage> createState() => _SeriesPageState();
@@ -152,7 +152,7 @@ class _SeriesPageState extends State<SeriesPage> {
                                 start: episodes.indexOf(episode),
                                 library: widget.library,
                                 bus: widget.bus,
-                                seat: widget.seat,
+                                keeps: widget.keeps,
                                 cues: [
                                   for (final item in episodes)
                                     PlaybackCue(

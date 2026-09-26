@@ -7,7 +7,7 @@ import '../../core/theme.dart';
 import '../assist/library_mind.dart';
 import '../library/user_library.dart';
 import '../library/user_source.dart';
-import '../lounge/seat_store.dart';
+import '../library/keep_store.dart';
 import '../playback/media_entry.dart';
 import '../shell/shell_section.dart';
 import 'catalog_rails.dart';
@@ -22,7 +22,7 @@ class CatalogPage extends StatelessWidget {
     super.key,
     required this.section,
     required this.library,
-    required this.seat,
+    required this.keeps,
     required this.onAdd,
     required this.onPlay,
     this.onFilter,
@@ -30,7 +30,7 @@ class CatalogPage extends StatelessWidget {
 
   final ShellSection section;
   final UserLibrary library;
-  final SeatStore seat;
+  final KeepStore keeps;
   final VoidCallback onAdd;
   final ValueChanged<MediaEntry> onPlay;
   final ValueChanged<ShellSection>? onFilter;
@@ -56,14 +56,14 @@ class CatalogPage extends StatelessWidget {
     );
     field.dispose();
     if (saved != null) {
-      seat.createShelf(saved);
+      keeps.createShelf(saved);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([library, seat]),
+      listenable: Listenable.merge([library, keeps]),
       builder: (context, _) {
         final items = library.items;
         final all = library.entriesFor(section);
@@ -71,13 +71,13 @@ class CatalogPage extends StatelessWidget {
         final entries = section == ShellSection.movies || section == ShellSection.series
             ? [for (final entry in all) if (catalogKeeps(entry, voice)) entry]
             : all;
-        final favorites = seat.favoritesIn(entries);
-        final recent = seat.recentIn(entries);
+        final favorites = keeps.favoritesIn(entries);
+        final recent = keeps.recentIn(entries);
         final rails = section == ShellSection.movies || section == ShellSection.series
             ? smartRails(entries, watched: recent)
             : const <CatalogRail>[];
-        final frames = seat.framesIn(entries);
-        final brief = seat.shortOnes(entries);
+        final frames = keeps.framesIn(entries);
+        final brief = keeps.shortOnes(entries);
         final contain = section == ShellSection.live;
         final phone = miaIsPhone(context);
         final topInset = phone ? MediaQuery.paddingOf(context).top + 100 : 0.0;
@@ -157,8 +157,8 @@ class CatalogPage extends StatelessWidget {
                   contain: contain,
                   card: true,
                   compact: true,
-                  listed: (entry) => seat.isFavorite(entry.id),
-                  onList: (entry) => seat.toggleFavorite(entry.id),
+                  listed: (entry) => keeps.isFavorite(entry.id),
+                  onList: (entry) => keeps.toggleFavorite(entry.id),
                 ),
               )
             else if (section == ShellSection.series || section == ShellSection.movies)
@@ -172,7 +172,7 @@ class CatalogPage extends StatelessWidget {
               ),
             if (section == ShellSection.live)
               SliverToBoxAdapter(
-                child: _LiveSeriesRow(library: library, seat: seat, onPlay: onPlay),
+                child: _LiveSeriesRow(library: library, keeps: keeps, onPlay: onPlay),
               ),
             if (recent.isNotEmpty)
               SliverToBoxAdapter(
@@ -185,13 +185,13 @@ class CatalogPage extends StatelessWidget {
                       : (recent.length > 12 ? recent.sublist(0, 12) : recent),
                   onPlay: onPlay,
                   contain: contain,
-                  noteFor: (entry) => section == ShellSection.live ? _channelNote(entry) : _leftAt(seat, entry),
-                  progressFor: section == ShellSection.live ? null : (entry) => _watchFraction(seat, entry),
+                  noteFor: (entry) => section == ShellSection.live ? _channelNote(entry) : _leftAt(keeps, entry),
+                  progressFor: section == ShellSection.live ? null : (entry) => _watchFraction(keeps, entry),
                 ),
               ),
             if (frames.isNotEmpty)
               SliverToBoxAdapter(
-                child: _FrameStrip(entries: frames, seat: seat, onPlay: onPlay),
+                child: _FrameStrip(entries: frames, keeps: keeps, onPlay: onPlay),
               ),
             if (brief.isNotEmpty)
               SliverToBoxAdapter(
@@ -211,12 +211,12 @@ class CatalogPage extends StatelessWidget {
                   contain: contain,
                 ),
               ),
-            for (final shelf in seat.shelves)
-              if (seat.shelfEntries(shelf, entries).isNotEmpty)
+            for (final shelf in keeps.shelves)
+              if (keeps.shelfEntries(shelf, entries).isNotEmpty)
                 SliverToBoxAdapter(
                   child: _EntryStrip(
                     title: shelf.name,
-                    entries: seat.shelfEntries(shelf, entries),
+                    entries: keeps.shelfEntries(shelf, entries),
                     onPlay: onPlay,
                     contain: contain,
                   ),
@@ -291,8 +291,8 @@ String? _seriesNote(MediaEntry entry) {
   return bits.isEmpty ? null : bits.take(3).join(' · ');
 }
 
-String? _leftAt(SeatStore seat, MediaEntry entry) {
-  for (final item in seat.unfinishedEpisodes([entry])) {
+String? _leftAt(KeepStore keeps, MediaEntry entry) {
+  for (final item in keeps.unfinishedEpisodes([entry])) {
     if (item.season != null || item.number != null) {
       final bits = <String>[
         if (item.season != null) 'Sezon ${item.season}',
@@ -302,20 +302,20 @@ String? _leftAt(SeatStore seat, MediaEntry entry) {
       return bits.join(' · ');
     }
   }
-  final spot = seat.spotOf(entry.id);
+  final spot = keeps.spotOf(entry.id);
   if (spot == null || spot.ms <= 8000) {
     return null;
   }
   return '${(spot.ms / 60000).round()} dk';
 }
 
-double? _watchFraction(SeatStore seat, MediaEntry entry) {
+double? _watchFraction(KeepStore keeps, MediaEntry entry) {
   final minutes = entry.minutes;
   if (minutes == null || minutes <= 0) {
     return null;
   }
-  final spot = seat.spotOf(entry.id);
-  final ms = spot?.ms ?? seat.unfinishedEpisodes([entry]).firstOrNull?.ms;
+  final spot = keeps.spotOf(entry.id);
+  final ms = spot?.ms ?? keeps.unfinishedEpisodes([entry]).firstOrNull?.ms;
   if (ms == null || ms <= 8000) {
     return null;
   }
@@ -362,10 +362,10 @@ class _TurnStripState extends State<_TurnStrip> {
 }
 
 class _LiveSeriesRow extends StatefulWidget {
-  const _LiveSeriesRow({required this.library, required this.seat, required this.onPlay});
+  const _LiveSeriesRow({required this.library, required this.keeps, required this.onPlay});
 
   final UserLibrary library;
-  final SeatStore seat;
+  final KeepStore keeps;
   final ValueChanged<MediaEntry> onPlay;
 
   @override
@@ -381,7 +381,7 @@ class _LiveSeriesRowState extends State<_LiveSeriesRow> {
       for (final entry in widget.library.entries)
         if (entry.section == ShellSection.series) entry,
     ];
-    final watched = widget.seat.recentIn(series);
+    final watched = widget.keeps.recentIn(series);
     final rows = watched.take(5).toList();
     if (rows.length < 5) {
       for (final item in spotlight(series, ShellSection.series, shift: _shift)) {
@@ -690,12 +690,12 @@ class _EntryStrip extends StatelessWidget {
 class _FrameStrip extends StatelessWidget {
   const _FrameStrip({
     required this.entries,
-    required this.seat,
+    required this.keeps,
     required this.onPlay,
   });
 
   final List<MediaEntry> entries;
-  final SeatStore seat;
+  final KeepStore keeps;
   final ValueChanged<MediaEntry> onPlay;
 
   @override
@@ -718,7 +718,7 @@ class _FrameStrip extends StatelessWidget {
               separatorBuilder: (_, _) => const SizedBox(width: 8),
               itemBuilder: (context, index) {
                 final entry = entries[index];
-                final spot = seat.spotOf(entry.id);
+                final spot = keeps.spotOf(entry.id);
                 final frame = spot?.frame;
                 final file = frame == null ? null : File(frame);
                 final seen = (spot?.ms ?? 0) > 8000;

@@ -10,7 +10,7 @@ import '../../core/theme.dart';
 import '../assist/library_mind.dart';
 import '../library/user_library.dart';
 import '../library/user_source.dart';
-import '../lounge/seat_store.dart';
+import '../library/keep_store.dart';
 import '../sync/lounge_link.dart';
 import 'data_save.dart';
 import 'media_entry.dart';
@@ -29,7 +29,7 @@ class PlayerPage extends StatefulWidget {
     this.live = false,
     this.library,
     this.bus,
-    this.seat,
+    this.keeps,
     this.link,
     this.adoptedPlayer,
     this.adoptedVideo,
@@ -40,7 +40,7 @@ class PlayerPage extends StatefulWidget {
   final bool live;
   final UserLibrary? library;
   final PlaybackBus? bus;
-  final SeatStore? seat;
+  final KeepStore? keeps;
   final LoungeLink? link;
   final Player? adoptedPlayer;
   final VideoController? adoptedVideo;
@@ -523,9 +523,9 @@ class _PlayerPageState extends State<PlayerPage> {
     if (id == null) {
       return;
     }
-    final seat = widget.seat;
-    if (seat != null) {
-      seat.toggleFavorite(id);
+    final keeps = widget.keeps;
+    if (keeps != null) {
+      keeps.toggleFavorite(id);
     } else {
       widget.library?.toggleFavorite(id);
     }
@@ -538,9 +538,9 @@ class _PlayerPageState extends State<PlayerPage> {
     if (id == null) {
       return false;
     }
-    final seat = widget.seat;
-    if (seat != null) {
-      return seat.isFavorite(id);
+    final keeps = widget.keeps;
+    if (keeps != null) {
+      return keeps.isFavorite(id);
     }
     return widget.library?.isFavorite(id) ?? false;
   }
@@ -550,13 +550,13 @@ class _PlayerPageState extends State<PlayerPage> {
       return;
     }
     final id = _cue.spotId;
-    final seat = widget.seat;
-    if (id == null || seat == null) {
+    final keeps = widget.keeps;
+    if (id == null || keeps == null) {
       return;
     }
     _restored = true;
-    final resume = seat.spotOf(id)?.ms ?? 0;
-    final intro = seat.introOf(id) ?? 0;
+    final resume = keeps.spotOf(id)?.ms ?? 0;
+    final intro = keeps.introOf(id) ?? 0;
     if (resume > 8000) {
       await _player.seek(Duration(milliseconds: resume));
       return;
@@ -583,32 +583,32 @@ class _PlayerPageState extends State<PlayerPage> {
       return;
     }
     final id = _cue.spotId;
-    final seat = widget.seat;
-    if (id == null || seat == null || _position.inSeconds < 5) {
+    final keeps = widget.keeps;
+    if (id == null || keeps == null || _position.inSeconds < 5) {
       return;
     }
     final done = creditFinished(_position.inMilliseconds, _duration.inMilliseconds);
     final label = _cue.detail ?? _cue.title;
-    seat.keepSpot(id, title: label, ms: _position.inMilliseconds, done: done);
+    keeps.keepSpot(id, title: label, ms: _position.inMilliseconds, done: done);
     final seriesId = _cue.id;
     if (done && !_hasNext && seriesId != null && seriesId != id) {
-      seat.keepSpot(seriesId, title: _cue.headline, ms: _position.inMilliseconds, done: true);
+      keeps.keepSpot(seriesId, title: _cue.headline, ms: _position.inMilliseconds, done: true);
     }
     try {
       final bytes = await _player.screenshot();
       if (bytes != null && bytes.isNotEmpty) {
-        await seat.keepFrame(id, title: _cue.headline, bytes: bytes);
+        await keeps.keepFrame(id, title: _cue.headline, bytes: bytes);
       }
     } catch (_) {}
   }
 
   void _markIntro() {
     final id = _cue.spotId;
-    final seat = widget.seat;
-    if (id == null || seat == null || widget.live) {
+    final keeps = widget.keeps;
+    if (id == null || keeps == null || widget.live) {
       return;
     }
-    seat.keepIntro(id, _position.inMilliseconds);
+    keeps.keepIntro(id, _position.inMilliseconds);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Jenerik kaydedildi. Sonraki açılışta atlanır.')),
     );
@@ -647,7 +647,7 @@ class _PlayerPageState extends State<PlayerPage> {
           builder: (context) => PlayerPage(
             library: widget.library,
             bus: widget.bus,
-            seat: widget.seat,
+            keeps: widget.keeps,
             link: link,
             cues: [PlaybackCue(title: signal.title ?? 'Birlikte', url: url)],
           ),

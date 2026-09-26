@@ -51,14 +51,14 @@ void main() {
       id: 'a',
       title: 'Ada',
       genre: 'Dram Tarih',
-      director: 'Miran Asmin',
+      director: 'Ege Deniz',
       cast: 'Deniz',
     );
     final close = _entry(
       id: 'b',
       title: 'Kıyı',
       genre: 'Dram',
-      director: 'Miran Asmin',
+      director: 'Ege Deniz',
       cast: 'Deniz',
     );
     final far = _entry(id: 'c', title: 'Başka', genre: 'Komedi');
@@ -99,7 +99,7 @@ void main() {
 
   test('bu kim oyuncu listesini okur', () {
     expect(whoAnswers('bu kim', cast: 'Deniz, Ege'), 'Deniz, Ege');
-    expect(whoAnswers('yönetmen kim', director: 'Miran'), 'Miran');
+    expect(whoAnswers('yönetmen kim', director: 'Ege'), 'Ege');
   });
 
   test('katalog ses süzgeci bilinmeyeni tutar', () {

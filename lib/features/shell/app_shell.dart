@@ -13,7 +13,7 @@ import '../epg/epg_page.dart';
 import '../library/add_source_page.dart';
 import '../assist/library_mind.dart';
 import '../library/user_library.dart';
-import '../lounge/seat_store.dart';
+import '../library/keep_store.dart';
 import '../playback/media_entry.dart';
 import '../playback/playback_bus.dart';
 import '../playback/player_page.dart';
@@ -31,14 +31,14 @@ class AppShell extends StatefulWidget {
     required this.library,
     required this.bus,
     required this.downloads,
-    required this.seat,
+    required this.keeps,
     required this.link,
   });
 
   final UserLibrary library;
   final PlaybackBus bus;
   final DownloadStore downloads;
-  final SeatStore seat;
+  final KeepStore keeps;
   final LoungeLink link;
 
   @override
@@ -91,7 +91,7 @@ class _AppShellState extends State<AppShell> {
         builder: (context) => PlayerPage(
           library: widget.library,
           bus: widget.bus,
-          seat: widget.seat,
+          keeps: widget.keeps,
           link: widget.link,
           cues: [
             PlaybackCue(
@@ -119,7 +119,7 @@ class _AppShellState extends State<AppShell> {
             library: widget.library,
             bus: widget.bus,
             downloads: widget.downloads,
-            seat: widget.seat,
+            keeps: widget.keeps,
             link: widget.link,
             similar: _similar(entry),
             onOpen: _openEntry,
@@ -148,7 +148,7 @@ class _AppShellState extends State<AppShell> {
           entryId: entry.id,
           library: widget.library,
           bus: widget.bus,
-          seat: widget.seat,
+          keeps: widget.keeps,
         ),
       ),
     );
@@ -167,7 +167,7 @@ class _AppShellState extends State<AppShell> {
           start: start < 0 ? 0 : start,
           library: widget.library,
           bus: widget.bus,
-          seat: widget.seat,
+          keeps: widget.keeps,
           link: widget.link,
           cues: [for (final item in siblings) item.toCue()],
         ),
@@ -198,7 +198,7 @@ class _AppShellState extends State<AppShell> {
             start: index,
             library: widget.library,
             bus: widget.bus,
-            seat: widget.seat,
+            keeps: widget.keeps,
             link: widget.link,
             cues: [
               for (final item in episodes)
@@ -245,7 +245,7 @@ class _AppShellState extends State<AppShell> {
           live: handoff.live,
           library: handoff.library,
           bus: widget.bus,
-          seat: widget.seat,
+          keeps: widget.keeps,
           link: widget.link,
           adoptedPlayer: handoff.player,
           adoptedVideo: handoff.video,
@@ -262,10 +262,10 @@ class _AppShellState extends State<AppShell> {
       extendBody: phone,
       backgroundColor: context.mia.background,
       drawer: ListenableBuilder(
-        listenable: widget.seat,
+        listenable: widget.keeps,
         builder: (context, _) => _AppDrawer(
           onAdd: _add,
-          favoriteCount: widget.seat.favoriteCount,
+          favoriteCount: widget.keeps.favoriteCount,
         ),
       ),
       body: Stack(
@@ -334,7 +334,7 @@ class _AppShellState extends State<AppShell> {
     final page = switch (_section) {
       ShellSection.home => HomePage(
           library: widget.library,
-          seat: widget.seat,
+          keeps: widget.keeps,
           onPlay: _openEntry,
           onResume: _openEpisode,
           onAdd: _add,
@@ -342,7 +342,7 @@ class _AppShellState extends State<AppShell> {
       ShellSection.live || ShellSection.series || ShellSection.movies => CatalogPage(
           section: _section,
           library: widget.library,
-          seat: widget.seat,
+          keeps: widget.keeps,
           onAdd: _add,
           onPlay: _openEntry,
           onFilter: (section) => setState(() => _section = section),
@@ -357,7 +357,7 @@ class _AppShellState extends State<AppShell> {
       ShellSection.menu => SettingsPage(
           onAdd: _add,
           library: widget.library,
-          seat: widget.seat,
+          keeps: widget.keeps,
           onPlay: _openEntry,
         ),
     };

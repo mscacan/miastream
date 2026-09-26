@@ -8,7 +8,7 @@ import 'core/theme.dart';
 import 'features/browse/cover_store.dart';
 import 'features/library/add_source_page.dart';
 import 'features/library/user_library.dart';
-import 'features/lounge/seat_store.dart';
+import 'features/library/keep_store.dart';
 import 'features/membership/membership_gate.dart';
 import 'features/offline/download_store.dart';
 import 'features/playback/playback_bus.dart';
@@ -29,7 +29,7 @@ class _MiaStreamAppState extends State<MiaStreamApp> {
   late final UserLibrary _library = UserLibrary(loader: widget.loader);
   final PlaybackBus _bus = PlaybackBus();
   final DownloadStore _downloads = DownloadStore();
-  final SeatStore _seat = SeatStore();
+  final KeepStore _keeps = KeepStore();
   final LoungeLink _link = LoungeLink();
   final MiaLook _look = MiaLook();
   final CoverStore _covers = CoverStore();
@@ -38,11 +38,7 @@ class _MiaStreamAppState extends State<MiaStreamApp> {
   @override
   void initState() {
     super.initState();
-    _seat.ensureLoaded().whenComplete(() {
-      if (mounted && !_seat.picked) {
-        _seat.pick(SeatStore.miran);
-      }
-    });
+    _keeps.ensureLoaded();
     _look.ensureLoaded();
     _library.restore().whenComplete(() {
       if (mounted) {
@@ -61,7 +57,7 @@ class _MiaStreamAppState extends State<MiaStreamApp> {
     _link.close();
     _link.dispose();
     _downloads.dispose();
-    _seat.dispose();
+    _keeps.dispose();
     _library.dispose();
     _look.dispose();
     _covers.dispose();
@@ -85,7 +81,7 @@ class _MiaStreamAppState extends State<MiaStreamApp> {
             listenable: _library,
             builder: (context, _) {
               return ListenableBuilder(
-                listenable: _seat,
+                listenable: _keeps,
                 builder: (context, _) {
                   if (!_sourcesReady) {
                     return const ColoredBox(
@@ -102,7 +98,7 @@ class _MiaStreamAppState extends State<MiaStreamApp> {
                     library: _library,
                     bus: _bus,
                     downloads: _downloads,
-                    seat: _seat,
+                    keeps: _keeps,
                     link: _link,
                   );
                   return shell;

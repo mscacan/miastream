@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../epg/epg_page.dart';
 import '../library/user_library.dart';
-import '../lounge/seat_store.dart';
+import '../library/keep_store.dart';
 import '../offline/download_store.dart';
 import '../playback/media_entry.dart';
 import '../playback/playback_bus.dart';
@@ -21,7 +21,7 @@ class TitlePage extends StatefulWidget {
     required this.library,
     required this.bus,
     required this.downloads,
-    required this.seat,
+    required this.keeps,
     required this.link,
     required this.similar,
     required this.onOpen,
@@ -31,7 +31,7 @@ class TitlePage extends StatefulWidget {
   final UserLibrary library;
   final PlaybackBus bus;
   final DownloadStore downloads;
-  final SeatStore seat;
+  final KeepStore keeps;
   final LoungeLink link;
   final List<MediaEntry> similar;
   final ValueChanged<MediaEntry> onOpen;
@@ -125,7 +125,7 @@ class _TitlePageState extends State<TitlePage> {
           start: start,
           library: widget.library,
           bus: widget.bus,
-          seat: widget.seat,
+          keeps: widget.keeps,
           link: widget.link,
         ),
       ),
@@ -317,13 +317,13 @@ class _TitlePageState extends State<TitlePage> {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               ListenableBuilder(
-                listenable: widget.seat,
+                listenable: widget.keeps,
                 builder: (context, _) {
-                  final marked = widget.seat.isFavorite(widget.entry.id);
+                  final marked = widget.keeps.isFavorite(widget.entry.id);
                   return _PhoneTool(
                     icon: marked ? Icons.check : Icons.add,
                     label: 'Listem',
-                    onTap: () => widget.seat.toggleFavorite(widget.entry.id),
+                    onTap: () => widget.keeps.toggleFavorite(widget.entry.id),
                   );
                 },
               ),
@@ -417,13 +417,13 @@ class _TitlePageState extends State<TitlePage> {
         play,
         download,
         ListenableBuilder(
-          listenable: widget.seat,
+          listenable: widget.keeps,
           builder: (context, _) {
-            final marked = widget.seat.isFavorite(widget.entry.id);
+            final marked = widget.keeps.isFavorite(widget.entry.id);
             return _WideTool(
               icon: marked ? Icons.check : Icons.add,
               label: 'Listem',
-              onTap: () => widget.seat.toggleFavorite(widget.entry.id),
+              onTap: () => widget.keeps.toggleFavorite(widget.entry.id),
             );
           },
         ),

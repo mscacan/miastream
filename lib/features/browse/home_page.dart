@@ -4,7 +4,7 @@ import '../../core/look.dart';
 import '../../core/theme.dart';
 import '../assist/library_mind.dart';
 import '../library/user_library.dart';
-import '../lounge/seat_store.dart';
+import '../library/keep_store.dart';
 import '../playback/media_entry.dart';
 import '../shell/shell_section.dart';
 import 'cover_art.dart';
@@ -45,14 +45,14 @@ class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
     required this.library,
-    required this.seat,
+    required this.keeps,
     required this.onPlay,
     required this.onResume,
     required this.onAdd,
   });
 
   final UserLibrary library;
-  final SeatStore seat;
+  final KeepStore keeps;
   final ValueChanged<MediaEntry> onPlay;
   final void Function(MediaEntry entry, int? season, int? number) onResume;
   final VoidCallback onAdd;
@@ -83,7 +83,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([widget.library, widget.seat]),
+      listenable: Listenable.merge([widget.library, widget.keeps]),
       builder: (context, _) {
         final look = LookScope.of(context);
         final pool = [
@@ -95,10 +95,10 @@ class _HomePageState extends State<HomePage> {
         ];
         final phone = miaIsPhone(context);
         final wide = !phone;
-        final skip = widget.seat.doneIds();
-        final recent = widget.seat.recentIn(pool);
-        final favorites = widget.seat.favoritesIn(pool);
-        final paused = widget.seat.unfinishedEpisodes(pool);
+        final skip = widget.keeps.doneIds();
+        final recent = widget.keeps.recentIn(pool);
+        final favorites = widget.keeps.favoritesIn(pool);
+        final paused = widget.keeps.unfinishedEpisodes(pool);
         if (pool.isEmpty) {
           return ListView(
             padding: EdgeInsets.fromLTRB(wide ? 48 : 20, 8, wide ? 48 : 20, phone ? 96 : 28),

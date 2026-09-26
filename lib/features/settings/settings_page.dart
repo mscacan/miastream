@@ -9,7 +9,7 @@ import '../browse/language_page.dart';
 import '../playback/media_entry.dart';
 import '../library/user_library.dart';
 import '../library/user_source.dart';
-import '../lounge/seat_store.dart';
+import '../library/keep_store.dart';
 import '../playback/data_save.dart';
 import '../playback/track_labels.dart';
 import '../shell/shell_section.dart';
@@ -20,13 +20,13 @@ class SettingsPage extends StatelessWidget {
     super.key,
     required this.onAdd,
     required this.library,
-    required this.seat,
+    required this.keeps,
     required this.onPlay,
   });
 
   final VoidCallback onAdd;
   final UserLibrary library;
-  final SeatStore seat;
+  final KeepStore keeps;
   final ValueChanged<MediaEntry> onPlay;
 
   @override
@@ -76,7 +76,7 @@ class SettingsPage extends StatelessWidget {
             _NavRow(
               icon: Icons.devices,
               title: 'Diğer cihazlarda kullanma',
-              onTap: () => _open(context, _DevicesPage(library: library, seat: seat)),
+              onTap: () => _open(context, _DevicesPage(library: library, keeps: keeps)),
             ),
             _NavRow(
               icon: Icons.ios_share,
@@ -494,10 +494,10 @@ class _MoodTile extends StatelessWidget {
 }
 
 class _DevicesPage extends StatefulWidget {
-  const _DevicesPage({required this.library, required this.seat});
+  const _DevicesPage({required this.library, required this.keeps});
 
   final UserLibrary library;
-  final SeatStore seat;
+  final KeepStore keeps;
 
   @override
   State<_DevicesPage> createState() => _DevicesPageState();
@@ -518,7 +518,7 @@ class _DevicesPageState extends State<_DevicesPage> {
   }
 
   Future<void> _host() async {
-    final error = await _sync.host(sources: widget.library.sourceBag(), marks: widget.seat.carryBag());
+    final error = await _sync.host(sources: widget.library.sourceBag(), marks: widget.keeps.carryBag());
     if (!mounted) {
       return;
     }
@@ -569,7 +569,7 @@ class _DevicesPageState extends State<_DevicesPage> {
     await widget.library.takeSources(sources);
     final marks = bag['marks'];
     if (marks is Map) {
-      widget.seat.absorbBag(marks);
+      widget.keeps.absorbBag(marks);
     }
     if (!mounted) {
       return;
