@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="mia_black">#FF141414</color>
+    <color name="mia_icon_back">#FF0E0E12</color>
 </resources>

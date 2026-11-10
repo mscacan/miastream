@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../../core/device.dart';
 import '../../core/look.dart';
 import '../../core/theme.dart';
+import '../../core/web_full.dart';
 import '../assist/library_mind.dart';
 import '../library/user_library.dart';
 import '../library/user_source.dart';
@@ -67,11 +70,19 @@ class _PlayerPageState extends State<PlayerPage> {
   bool _restored = false;
   bool _prefsApplied = false;
   bool _echo = false;
+  bool _buffering = false;
+  double _rate = 1;
   double _subDelay = 0;
   double _volume = 100;
   double _brightness = 1;
-  Duration _position = Duration.zero;
+
+  /// Konum saniyede birkaç kez gelir; yalnızca süre çubuğu yeniden çizilir.
+  final _positionNote = ValueNotifier(Duration.zero);
+  Duration get _position => _positionNote.value;
+  set _position(Duration value) => _positionNote.value = value;
   Duration _duration = Duration.zero;
+  final _keysNode = FocusNode(debugLabel: 'Oynatıcı tuşları');
+  final _playNode = FocusNode(debugLabel: 'Oynat düğmesi');
   Tracks _tracks = const Tracks();
   Track _selected = const Track();
   VideoParams _videoParams = const VideoParams();
@@ -128,9 +139,15 @@ class _PlayerPageState extends State<PlayerPage> {
       }),
     );
     widget.link?.addListener(_onRemote);
+    watchWebFull((on) {
+      if (mounted && on != _full) setState(() => _full = on);
+    });
     _subscriptions.add(
       _player.stream.position.listen((position) {
-        if (mounted) setState(() => _position = position);
+        if (!mounted) {
+          return;
+        }
+        _position = position;
         _broadcast();
       }),
     );
@@ -170,6 +187,11 @@ class _PlayerPageState extends State<PlayerPage> {
       }),
     );
     _subscriptions.add(
+      _player.stream.buffering.listen((buffering) {
+        if (mounted && buffering != _buffering) setState(() => _buffering = buffering);
+      }),
+    );
+    _subscriptions.add(
       _player.stream.volume.listen((volume) {
         if (mounted) setState(() => _volume = volume);
       }),
@@ -197,9 +219,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _play(String url) async {
     await _applyDataSave();
-    await _player.open(
-      Media(url, httpHeaders: const {'User-Agent': 'MiaStream'}),
-    );
+    await _player.open(Media(url, httpHeaders: const {'User-Agent': 'MiaStream'}));
   }
 
   Future<void> _applyDataSave() async {
@@ -229,9 +249,7 @@ class _PlayerPageState extends State<PlayerPage> {
     }
     _dataNoted = true;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Bu kayıt tek boy. Kaynak küçük görüntü sunmuyor, indirme aynı kalır.'),
-      ),
+      const SnackBar(content: Text('Bu kayıt tek boy. Kaynak küçük görüntü sunmuyor, indirme aynı kalır.')),
     );
   }
 
@@ -295,6 +313,7 @@ class _PlayerPageState extends State<PlayerPage> {
     _cursorTimer?.cancel();
     OutsideWindow.cursor(false);
     OutsideWindow.watchLeave(null);
+    watchWebFull(null);
     _stageTimer?.cancel();
     _sleep?.cancel();
     for (final subscription in _subscriptions) {
@@ -303,21 +322,149 @@ class _PlayerPageState extends State<PlayerPage> {
     if (!_parked) {
       _player.dispose();
     }
+    _positionNote.dispose();
+    _keysNode.dispose();
+    _playNode.dispose();
     super.dispose();
   }
 
   void _armHide() {
     _hideTimer?.cancel();
-    _hideTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted && _playing) setState(() => _controls = false);
+    _hideTimer = Timer(Duration(seconds: MiaDevice.isTv ? 5 : 4), () {
+      if (mounted && _playing) _hideControls();
     });
   }
 
-  void _reveal() {
+  /// Kontroller kalkınca odak oynatıcıda kalır; yoksa kumanda tuşları boşa gider.
+  void _hideControls() {
+    setState(() => _controls = false);
+    _keysNode.requestFocus();
+  }
+
+  void _reveal({bool focusPlay = false}) {
     setState(() => _controls = true);
     if (_playing) {
       _armHide();
     }
+    if (focusPlay) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _playNode.context != null) {
+          _playNode.requestFocus();
+        }
+      });
+    }
+  }
+
+  static final _okKeys = {
+    LogicalKeyboardKey.select,
+    LogicalKeyboardKey.enter,
+    LogicalKeyboardKey.numpadEnter,
+    LogicalKeyboardKey.space,
+    LogicalKeyboardKey.gameButtonA,
+  };
+
+  static final _arrowKeys = {
+    LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowRight,
+    LogicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowDown,
+  };
+
+  /// Kumanda: kontroller kapalıyken OK oynat/duraklat, sol/sağ sar,
+  /// canlıda yukarı/aşağı kanal. Kontroller açıkken odak düğmeler arasında gezer.
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    final repeat = event is KeyRepeatEvent;
+    if (!repeat) {
+      if (key == LogicalKeyboardKey.mediaPlayPause) {
+        _player.playOrPause();
+        _reveal();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.mediaPlay) {
+        _player.play();
+        _reveal();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.mediaPause) {
+        _player.pause();
+        _reveal();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.mediaStop) {
+        Navigator.maybePop(context);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.channelUp || key == LogicalKeyboardKey.mediaTrackNext) {
+        _step(1);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.channelDown || key == LogicalKeyboardKey.mediaTrackPrevious) {
+        _step(-1);
+        return KeyEventResult.handled;
+      }
+    }
+    if (key == LogicalKeyboardKey.mediaFastForward || key == LogicalKeyboardKey.mediaRewind) {
+      if (!widget.live) {
+        _nudge(key == LogicalKeyboardKey.mediaFastForward ? 30 : -30);
+      }
+      return KeyEventResult.handled;
+    }
+    if (_locked) {
+      return KeyEventResult.ignored;
+    }
+    final ok = _okKeys.contains(key);
+    if (!ok && !_arrowKeys.contains(key)) {
+      return KeyEventResult.ignored;
+    }
+    if (_perde) {
+      if (ok) {
+        setState(() {
+          _perde = false;
+          _salon = true;
+          _controls = true;
+        });
+      }
+      return KeyEventResult.handled;
+    }
+    final loose = !_controls || FocusManager.instance.primaryFocus == _keysNode;
+    if (!loose) {
+      if (_playing) {
+        _armHide();
+      }
+      return KeyEventResult.ignored;
+    }
+    if (ok) {
+      if (!repeat) {
+        _player.playOrPause();
+        _reveal(focusPlay: true);
+      }
+      return KeyEventResult.handled;
+    }
+    if (widget.live) {
+      if (repeat) {
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowUp) {
+        _step(1);
+      } else if (key == LogicalKeyboardKey.arrowDown) {
+        _step(-1);
+      } else {
+        _reveal(focusPlay: true);
+      }
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      _nudge(-10);
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      _nudge(10);
+    } else {
+      _reveal(focusPlay: true);
+    }
+    return KeyEventResult.handled;
   }
 
   void _sleepFor(int? minutes) {
@@ -333,9 +480,7 @@ class _PlayerPageState extends State<PlayerPage> {
       }
       _player.pause();
       setState(() => _sleepMinutes = null);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Uyku zamanı doldu. Yayın durdu.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uyku zamanı doldu. Yayın durdu.')));
     });
   }
 
@@ -380,7 +525,7 @@ class _PlayerPageState extends State<PlayerPage> {
       return;
     }
     if (_controls && _playing) {
-      setState(() => _controls = false);
+      _hideControls();
       _hideTimer?.cancel();
       return;
     }
@@ -490,10 +635,7 @@ class _PlayerPageState extends State<PlayerPage> {
             children: [
               const Padding(padding: EdgeInsets.all(16), child: Text('Geri al')),
               for (final minutes in shown)
-                ListTile(
-                  title: Text('$minutes dakika önce'),
-                  onTap: () => Navigator.pop(context, minutes),
-                ),
+                ListTile(title: Text('$minutes dakika önce'), onTap: () => Navigator.pop(context, minutes)),
             ],
           ),
         );
@@ -569,10 +711,7 @@ class _PlayerPageState extends State<PlayerPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Jenerik atlandı'),
-          action: SnackBarAction(
-            label: 'Geri al',
-            onPressed: () => _player.seek(Duration.zero),
-          ),
+          action: SnackBarAction(label: 'Geri al', onPressed: () => _player.seek(Duration.zero)),
         ),
       );
     }
@@ -609,9 +748,8 @@ class _PlayerPageState extends State<PlayerPage> {
       return;
     }
     keeps.keepIntro(id, _position.inMilliseconds);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Jenerik kaydedildi. Sonraki açılışta atlanır.')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Jenerik kaydedildi. Sonraki açılışta atlanır.')));
   }
 
   void _broadcast({bool force = false}) {
@@ -624,14 +762,7 @@ class _PlayerPageState extends State<PlayerPage> {
       return;
     }
     _announced = now;
-    link.announce(
-      LoungeSignal(
-        playing: _playing,
-        ms: _position.inMilliseconds,
-        url: _cue.url,
-        title: _cue.headline,
-      ),
-    );
+    link.announce(LoungeSignal(playing: _playing, ms: _position.inMilliseconds, url: _cue.url, title: _cue.headline));
   }
 
   void _onRemote() {
@@ -749,8 +880,7 @@ class _PlayerPageState extends State<PlayerPage> {
         }
       }
     }
-    final answer = whoAnswers('bu kim', cast: entry?.cast, director: entry?.director) ??
-        'Bu kayıtta oyuncu yazmıyor.';
+    final answer = whoAnswers('bu kim', cast: entry?.cast, director: entry?.director) ?? 'Bu kayıtta oyuncu yazmıyor.';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(answer)));
   }
 
@@ -760,10 +890,7 @@ class _PlayerPageState extends State<PlayerPage> {
         const Spacer(),
         Text('Salon', style: MiaType.outfit(28, 650, color: Colors.white)),
         const SizedBox(height: 8),
-        Text(
-          'Görüntü perdede. Kumanda burada.',
-          style: MiaType.manrope(13, 500, color: Colors.white70),
-        ),
+        Text('Görüntü perdede. Kumanda burada.', style: MiaType.manrope(13, 500, color: Colors.white70)),
         const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -813,10 +940,7 @@ class _PlayerPageState extends State<PlayerPage> {
           }),
           child: const Text('Perdeyi kapat'),
         ),
-        TextButton(
-          onPressed: () => setState(() => _salon = false),
-          child: const Text('Kumandayı kapat'),
-        ),
+        TextButton(onPressed: () => setState(() => _salon = false), child: const Text('Kumandayı kapat')),
         const SizedBox(height: 12),
       ],
     );
@@ -955,9 +1079,7 @@ class _PlayerPageState extends State<PlayerPage> {
                   messenger.showSnackBar(SnackBar(content: Text(error)));
                   return;
                 }
-                messenger.showSnackBar(
-                  SnackBar(content: Text('${link.address}  ·  ${link.code}')),
-                );
+                messenger.showSnackBar(SnackBar(content: Text('${link.address}  ·  ${link.code}')));
                 _broadcast(force: true);
               },
               child: const Text('Perdeyi aç'),
@@ -1049,10 +1171,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   String _audioName(AudioTrack track, int index) {
     if (prefersTurkish(track.language, track.title)) {
-      final count = _audioChoices
-          .take(index + 1)
-          .where((item) => prefersTurkish(item.language, item.title))
-          .length;
+      final count = _audioChoices.take(index + 1).where((item) => prefersTurkish(item.language, item.title)).length;
       return count <= 1 ? 'Türkçe' : 'Türkçe $count';
     }
     final title = track.title?.trim();
@@ -1094,11 +1213,7 @@ class _PlayerPageState extends State<PlayerPage> {
       backgroundColor: const Color(0xF0141418),
       builder: (sheet) {
         return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(8, 12, 8, 20),
-            children: body(sheet),
-          ),
+          child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(8, 12, 8, 20), children: body(sheet)),
         );
       },
     );
@@ -1152,17 +1267,10 @@ class _PlayerPageState extends State<PlayerPage> {
                   title: const Text('Altyazı kaydır'),
                   content: StatefulBuilder(
                     builder: (context, setLocal) {
-                      return Slider(
-                        min: -5,
-                        max: 5,
-                        value: next,
-                        onChanged: (value) => setLocal(() => next = value),
-                      );
+                      return Slider(min: -5, max: 5, value: next, onChanged: (value) => setLocal(() => next = value));
                     },
                   ),
-                  actions: [
-                    FilledButton(onPressed: () => Navigator.pop(dialog), child: const Text('Uygula')),
-                  ],
+                  actions: [FilledButton(onPressed: () => Navigator.pop(dialog), child: const Text('Uygula'))],
                 );
               },
             );
@@ -1349,173 +1457,114 @@ class _PlayerPageState extends State<PlayerPage> {
   Widget build(BuildContext context) {
     final favorite = _marked();
     final line = widget.live ? 'Bilgi mevcut değil' : (_cue.detail ?? _cue.title);
-    return MouseRegion(
-      cursor: _cursorGone ? SystemMouseCursors.none : MouseCursor.defer,
-      onHover: (_) => _nudgeCursor(),
-      onEnter: (_) => _nudgeCursor(),
-      child: Scaffold(
-      backgroundColor: Colors.black,
-      body: GestureDetector(
-        onTap: () {
-          if (_perde) {
-            setState(() {
-              _perde = false;
-              _salon = true;
-              _controls = true;
-            });
-            return;
-          }
-          _toggleControls();
-        },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _bright(_stageView()),
-            if (_stageHint != null)
-              IgnorePointer(
-                child: Align(
-                  alignment: const Alignment(0, -0.22),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: const Color(0xCC000000),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      child: Text(
-                        _stageHint!,
-                        style: MiaType.manrope(14, 700, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            if (_controls && !_locked)
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xCC000000), Color(0x22000000), Color(0xE6000000)],
-                    stops: [0, 0.45, 1],
-                  ),
-                ),
-              ),
-            if (!_perde && (_controls || _locked))
-              SafeArea(
-                child: _locked
-                    ? Align(
-                        alignment: Alignment.centerRight,
-                        child: IconButton(
-                          tooltip: 'Kilidi aç',
-                          onPressed: () => setState(() => _locked = false),
-                          icon: const Icon(Icons.lock_open, color: Colors.white),
+    if (!_controls && !_keysNode.hasFocus && ModalRoute.of(context)?.isCurrent == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_controls) _keysNode.requestFocus();
+      });
+    }
+    return Focus(
+      focusNode: _keysNode,
+      autofocus: true,
+      onKeyEvent: _onKey,
+      child: MouseRegion(
+        cursor: _cursorGone ? SystemMouseCursors.none : MouseCursor.defer,
+        onHover: (_) => _nudgeCursor(),
+        onEnter: (_) => _nudgeCursor(),
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: GestureDetector(
+            onTap: () {
+              if (_perde) {
+                setState(() {
+                  _perde = false;
+                  _salon = true;
+                  _controls = true;
+                });
+                return;
+              }
+              _toggleControls();
+            },
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _bright(_stageView()),
+                if (_stageHint != null)
+                  IgnorePointer(
+                    child: Align(
+                      alignment: const Alignment(0, -0.22),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xCC000000),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      )
-                    : _salon
-                    ? _salonRemote()
-                    : Stack(
-                        children: [
-                          Column(
-                        children: [
-                          _topBar(favorite),
-                          Expanded(
-                            child: Row(
-                              children: [
-                                const SizedBox(width: 56),
-                                Expanded(
-                                  child: Center(
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          tooltip: widget.live ? 'Önceki' : '10 saniye geri',
-                                          iconSize: 36,
-                                          visualDensity: VisualDensity.compact,
-                                          onPressed: widget.live
-                                              ? (_hasPrev ? () => _step(-1) : null)
-                                              : () => _nudge(-10),
-                                          icon: Icon(
-                                            widget.live ? Icons.skip_previous : Icons.replay_10,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: _playing ? 'Duraklat' : 'Oynat',
-                                          iconSize: 64,
-                                          visualDensity: VisualDensity.compact,
-                                          onPressed: () => _player.playOrPause(),
-                                          icon: Icon(
-                                            _playing ? Icons.pause_circle : Icons.play_circle,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: widget.live ? 'Sonraki' : '10 saniye ileri',
-                                          iconSize: 36,
-                                          visualDensity: VisualDensity.compact,
-                                          onPressed: widget.live
-                                              ? (_hasNext ? () => _step(1) : null)
-                                              : () => _nudge(10),
-                                          icon: Icon(
-                                            widget.live ? Icons.skip_next : Icons.forward_10,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 56),
-                              ],
-                            ),
-                          ),
-                          if (_failed)
-                            const Padding(
-                              padding: EdgeInsets.only(bottom: 6),
-                              child: Text('Oynatılamadı', style: TextStyle(color: Colors.white)),
-                            ),
-                          _bottomTitle(line),
-                          if (widget.live)
-                            const Padding(
-                              padding: EdgeInsets.only(bottom: 8),
-                              child: _LiveMark(),
-                            )
-                          else
-                            _seekBar(),
-                          _toolRow(),
-                        ],
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          child: Text(_stageHint!, style: MiaType.manrope(14, 700, color: Colors.white)),
+                        ),
                       ),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: _edgeSlider(
-                              icon: _brightness < 0.7 ? Icons.wb_sunny_outlined : Icons.wb_sunny,
-                              value: ((_brightness - 0.35) / 1.25).clamp(0, 1).toDouble(),
-                              onChanged: (value) {
-                                setState(() => _brightness = 0.35 + value * 1.25);
-                                _reveal();
-                              },
-                              onIcon: () {
-                                setState(() => _brightness = _brightness < 0.7 ? 1 : 0.4);
-                                _reveal();
-                              },
-                            ),
-                          ),
-                          Align(
+                    ),
+                  ),
+                if (_controls && !_locked)
+                  const IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xB3000000), Color(0x00000000), Color(0x00000000), Color(0xF2000000)],
+                          stops: [0, 0.25, 0.55, 1],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_buffering && !_failed)
+                  const IgnorePointer(
+                    child: Center(
+                      child: SizedBox(
+                        width: 56,
+                        height: 56,
+                        child: CircularProgressIndicator(strokeWidth: 3.5, color: Color(0xFFE50914)),
+                      ),
+                    ),
+                  ),
+                if (!widget.live && _hasNext && !_locked)
+                  ValueListenableBuilder<Duration>(
+                    valueListenable: _positionNote,
+                    builder: (context, position, _) {
+                      final left = _duration - position;
+                      if (_duration.inSeconds < 120 || left.inSeconds > 30 || left.isNegative) {
+                        return const SizedBox.shrink();
+                      }
+                      return Positioned(
+                        right: 32,
+                        bottom: _controls ? 170 : 48,
+                        child: _NextUp(
+                          title: widget.cues[_index + 1].headline,
+                          seconds: left.inSeconds,
+                          onPlay: () => _step(1),
+                        ),
+                      );
+                    },
+                  ),
+                if (!_perde && (_controls || _locked))
+                  SafeArea(
+                    child: _locked
+                        ? Align(
                             alignment: Alignment.centerRight,
-                            child: _edgeSlider(
-                              icon: _muted || _volume == 0 ? Icons.volume_off : Icons.volume_up,
-                              value: (_muted ? 0.0 : _volume / 100).clamp(0.0, 1.0).toDouble(),
-                              onChanged: (value) => _setVolume(value * 100),
-                              onIcon: _toggleMute,
+                            child: IconButton(
+                              tooltip: 'Kilidi aç',
+                              onPressed: () => setState(() => _locked = false),
+                              icon: const Icon(Icons.lock_open, color: Colors.white),
                             ),
-                          ),
-                        ],
-                      ),
-              ),
-          ],
+                          )
+                        : _salon
+                        ? _salonRemote()
+                        : _overlay(favorite, line),
+                  ),
+              ],
+            ),
+          ),
         ),
-      ),
       ),
     );
   }
@@ -1535,10 +1584,26 @@ class _PlayerPageState extends State<PlayerPage> {
     if (_brightness > 1.02) {
       return ColorFiltered(
         colorFilter: ColorFilter.matrix(<double>[
-          _brightness, 0, 0, 0, 0,
-          0, _brightness, 0, 0, 0,
-          0, 0, _brightness, 0, 0,
-          0, 0, 0, 1, 0,
+          _brightness,
+          0,
+          0,
+          0,
+          0,
+          0,
+          _brightness,
+          0,
+          0,
+          0,
+          0,
+          0,
+          _brightness,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]),
         child: child,
       );
@@ -1546,51 +1611,284 @@ class _PlayerPageState extends State<PlayerPage> {
     return child;
   }
 
-  Widget _topBar(bool favorite) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'Kapat',
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.close, color: Colors.white),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (final fact in _facts) ...[
-                    const SizedBox(width: 6),
-                    _Fact(fact),
-                  ],
-                ],
+  Widget _overlay(bool favorite, String line) {
+    final wide = MediaQuery.sizeOf(context).width >= 760;
+    final tv = MiaDevice.isTv;
+    return Stack(
+      children: [
+        Column(
+          children: [
+            _topBar(favorite, wide),
+            Expanded(child: Center(child: _centerControls(wide))),
+            if (_failed)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(color: const Color(0xCCE50914), borderRadius: BorderRadius.circular(6)),
+                child: Text('Yayın açılamadı', style: MiaType.manrope(14, 700, color: Colors.white)),
               ),
+            if (!wide) _bottomTitle(line),
+            if (widget.live)
+              Padding(
+                padding: EdgeInsets.fromLTRB(wide ? 28 : 16, 0, wide ? 28 : 16, 6),
+                child: Row(
+                  children: [
+                    const _LiveMark(),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Container(
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE50914),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              _seekBar(),
+            if (wide) _wideRow(line) else _toolRow(),
+            SizedBox(height: wide ? 14 : 6),
+          ],
+        ),
+        if (!tv && !wide)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _edgeSlider(
+              icon: _brightness < 0.7 ? Icons.wb_sunny_outlined : Icons.wb_sunny,
+              value: ((_brightness - 0.35) / 1.25).clamp(0, 1).toDouble(),
+              onChanged: (value) {
+                setState(() => _brightness = 0.35 + value * 1.25);
+                _reveal();
+              },
+              onIcon: () {
+                setState(() => _brightness = _brightness < 0.7 ? 1 : 0.4);
+                _reveal();
+              },
             ),
           ),
-          _barIcon(tooltip: _stage.label, onPressed: _cycleStage, icon: _stage.icon),
-          _barIcon(
-            tooltip: 'Kilitle',
-            onPressed: () => setState(() => _locked = true),
-            icon: Icons.lock_outline,
+        if (!tv && !wide)
+          Align(
+            alignment: Alignment.centerRight,
+            child: _edgeSlider(
+              icon: _muted || _volume == 0 ? Icons.volume_off : Icons.volume_up,
+              value: (_muted ? 0.0 : _volume / 100).clamp(0.0, 1.0).toDouble(),
+              onChanged: (value) => _setVolume(value * 100),
+              onIcon: _toggleMute,
+            ),
           ),
-          _barIcon(tooltip: 'Küçük pencere', onPressed: _pip, icon: Icons.picture_in_picture_alt),
+      ],
+    );
+  }
+
+  Widget _centerControls(bool wide) {
+    final side = wide ? 64.0 : 54.0;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _GlassButton(
+          size: side,
+          tooltip: widget.live ? 'Önceki kanal' : '10 saniye geri',
+          icon: widget.live ? Icons.skip_previous_rounded : Icons.replay_10_rounded,
+          onPressed: widget.live ? (_hasPrev ? () => _step(-1) : null) : () => _nudge(-10),
+        ),
+        SizedBox(width: wide ? 44 : 28),
+        _GlassButton(
+          size: wide ? 92 : 76,
+          focusNode: _playNode,
+          tooltip: _playing ? 'Duraklat' : 'Oynat',
+          icon: _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+          strong: true,
+          onPressed: () => _player.playOrPause(),
+        ),
+        SizedBox(width: wide ? 44 : 28),
+        _GlassButton(
+          size: side,
+          tooltip: widget.live ? 'Sonraki kanal' : '10 saniye ileri',
+          icon: widget.live ? Icons.skip_next_rounded : Icons.forward_10_rounded,
+          onPressed: widget.live ? (_hasNext ? () => _step(1) : null) : () => _nudge(10),
+        ),
+      ],
+    );
+  }
+
+  Widget _topBar(bool favorite, bool wide) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(wide ? 20 : 8, 8, wide ? 20 : 8, 0),
+      child: Row(
+        children: [
+          _GlassButton(
+            size: 44,
+            tooltip: 'Geri',
+            icon: Icons.arrow_back_rounded,
+            onPressed: () => Navigator.pop(context),
+          ),
+          const SizedBox(width: 12),
+          if (wide)
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _cue.seriesTitle ?? _cue.headline,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: MiaType.outfit(20, 750, color: Colors.white),
+                  ),
+                  if (_facts.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Wrap(spacing: 6, children: [for (final fact in _facts) _Fact(fact)]),
+                    ),
+                ],
+              ),
+            )
+          else
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final fact in _facts) ...[_Fact(fact), const SizedBox(width: 6)],
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(width: 8),
+          if (!wide)
+            _barIcon(tooltip: 'Kilitle', onPressed: () => setState(() => _locked = true), icon: Icons.lock_outline),
+          _barIcon(tooltip: 'Küçük pencere', onPressed: _pip, icon: Icons.picture_in_picture_alt_rounded),
           _barIcon(
             tooltip: favorite ? 'Favorilerden çıkar' : 'Favorilere ekle',
             onPressed: _cue.id == null ? null : _toggleFavorite,
-            icon: favorite ? Icons.star : Icons.star_border,
-            color: favorite ? const Color(0xFFFFC107) : Colors.white,
+            icon: favorite ? Icons.star_rounded : Icons.star_border_rounded,
+            color: favorite ? const Color(0xFFFFC53D) : Colors.white,
           ),
-          _barIcon(
-            tooltip: _full ? 'Tam ekrandan çık' : 'Tam ekran',
-            onPressed: _toggleFull,
-            icon: _full ? Icons.fullscreen_exit : Icons.fullscreen,
-          ),
-          _barIcon(tooltip: 'Ayarlar', onPressed: _settings, icon: Icons.settings),
+          _barIcon(tooltip: 'Ayarlar', onPressed: _settings, icon: Icons.settings_rounded),
         ],
       ),
     );
+  }
+
+  Widget _wideRow(String line) {
+    final tv = MiaDevice.isTv;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 0),
+      child: Row(
+        children: [
+          _barIcon(
+            tooltip: _playing ? 'Duraklat' : 'Oynat',
+            onPressed: () => _player.playOrPause(),
+            icon: _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            size: 32,
+          ),
+          if (!widget.live) ...[
+            _barIcon(tooltip: '10 saniye geri', onPressed: () => _nudge(-10), icon: Icons.replay_10_rounded, size: 28),
+            _barIcon(tooltip: '10 saniye ileri', onPressed: () => _nudge(10), icon: Icons.forward_10_rounded, size: 28),
+          ],
+          _barIcon(
+            tooltip: _muted ? 'Sesi aç' : 'Sesi kapat',
+            onPressed: _toggleMute,
+            icon: _muted || _volume == 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+            size: 28,
+          ),
+          if (!tv)
+            SizedBox(
+              width: 110,
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 3,
+                  activeTrackColor: Colors.white,
+                  inactiveTrackColor: Colors.white24,
+                  thumbColor: Colors.white,
+                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                ),
+                child: Slider(
+                  value: (_muted ? 0.0 : _volume / 100).clamp(0.0, 1.0).toDouble(),
+                  onChanged: (value) => _setVolume(value * 100),
+                ),
+              ),
+            ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: _cue.headline,
+                    style: MiaType.manrope(15, 750, color: Colors.white),
+                  ),
+                  if (line != _cue.headline && line.isNotEmpty)
+                    TextSpan(
+                      text: '   $line',
+                      style: MiaType.manrope(14, 500, color: const Color(0xFFB9B9C2)),
+                    ),
+                ],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (!widget.live && _hasNext)
+            _barIcon(tooltip: 'Sonraki bölüm', onPressed: () => _step(1), icon: Icons.skip_next_rounded, size: 30),
+          if (_subtitleChoices.isNotEmpty || _audioChoices.length > 1)
+            _barIcon(
+              tooltip: 'Ses ve altyazı',
+              onPressed: _subtitleChoices.isNotEmpty ? _subtitleSheet : _audioSheet,
+              icon: Icons.subtitles_rounded,
+              size: 28,
+            ),
+          if (_audioChoices.length > 1 && _subtitleChoices.isNotEmpty)
+            _barIcon(tooltip: 'Ses parçası', onPressed: _audioSheet, icon: Icons.graphic_eq_rounded, size: 28),
+          if (!widget.live)
+            _barIcon(tooltip: 'Oynatma hızı', onPressed: _rateSheet, icon: Icons.speed_rounded, size: 28),
+          if ((_cue.archiveHours ?? 0) > 0 && _cue.streamId != null)
+            _barIcon(tooltip: 'Geri al', onPressed: _replay, icon: Icons.history_rounded, size: 28),
+          _barIcon(tooltip: _stage.label, onPressed: _cycleStage, icon: _stage.icon, size: 26),
+          if (!tv)
+            _barIcon(
+              tooltip: _full ? 'Tam ekrandan çık' : 'Tam ekran',
+              onPressed: _toggleFull,
+              icon: _full ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+              size: 30,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _rateSheet() async {
+    const rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    final picked = await showModalBottomSheet<double>(
+      context: context,
+      backgroundColor: const Color(0xFF15151B),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _SheetTitle('Oynatma hızı'),
+            for (final rate in rates)
+              ListTile(
+                autofocus: rate == _rate,
+                title: Text(rate == 1 ? 'Normal' : '${rate}x'),
+                trailing: rate == _rate ? const Icon(Icons.check_rounded, color: Color(0xFFE50914)) : null,
+                onTap: () => Navigator.pop(context, rate),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) {
+      return;
+    }
+    await _player.setRate(picked);
+    if (mounted) setState(() => _rate = picked);
   }
 
   Widget _barIcon({
@@ -1598,14 +1896,15 @@ class _PlayerPageState extends State<PlayerPage> {
     required VoidCallback? onPressed,
     required IconData icon,
     Color color = Colors.white,
+    double size = 24,
   }) {
     return IconButton(
       tooltip: tooltip,
       onPressed: onPressed,
       visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.all(6),
-      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-      icon: Icon(icon, color: color, size: 22),
+      padding: const EdgeInsets.all(8),
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      icon: Icon(icon, color: onPressed == null ? Colors.white38 : color, size: size),
     );
   }
 
@@ -1666,19 +1965,26 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Widget _seekBar() {
+    return ValueListenableBuilder<Duration>(valueListenable: _positionNote, builder: (context, _, _) => _seekRow());
+  }
+
+  Widget _seekRow() {
+    final left = _duration - _position;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
       child: Row(
         children: [
-          Text(_clock(_position), style: MiaType.manrope(11, 600, color: Colors.white)),
+          Text(_clock(_position), style: MiaType.manrope(12, 700, color: Colors.white)),
           Expanded(
             child: SliderTheme(
               data: SliderTheme.of(context).copyWith(
-                activeTrackColor: Colors.white,
-                inactiveTrackColor: Colors.white24,
-                thumbColor: Colors.white,
-                overlayColor: const Color(0x33FFFFFF),
-                trackHeight: 2,
+                activeTrackColor: const Color(0xFFE50914),
+                inactiveTrackColor: const Color(0x40FFFFFF),
+                thumbColor: const Color(0xFFE50914),
+                overlayColor: const Color(0x33E50914),
+                trackHeight: 4,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
               ),
               child: Slider(
                 value: _sliderValue,
@@ -1690,7 +1996,10 @@ class _PlayerPageState extends State<PlayerPage> {
               ),
             ),
           ),
-          Text(_clock(_duration), style: MiaType.manrope(11, 600, color: Colors.white70)),
+          Text(
+            _duration > Duration.zero ? '-${_clock(left.isNegative ? Duration.zero : left)}' : '--:--',
+            style: MiaType.manrope(12, 700, color: const Color(0xFFCFCFD6)),
+          ),
         ],
       ),
     );
@@ -1743,14 +2052,10 @@ class _PlayerPageState extends State<PlayerPage> {
     return switch (_stage) {
       _Stage.fit => video,
       _Stage.cinema => ColoredBox(
-          color: Colors.black,
-          child: Center(
-            child: AspectRatio(aspectRatio: 2.39, child: video),
-          ),
-        ),
-      _Stage.zoom => ClipRect(
-          child: Transform.scale(scale: 1.34, child: video),
-        ),
+        color: Colors.black,
+        child: Center(child: AspectRatio(aspectRatio: 2.39, child: video)),
+      ),
+      _Stage.zoom => ClipRect(child: Transform.scale(scale: 1.34, child: video)),
     };
   }
 
@@ -1784,12 +2089,7 @@ class _Fact extends StatelessWidget {
 }
 
 class _SideSlider extends StatelessWidget {
-  const _SideSlider({
-    required this.icon,
-    required this.value,
-    required this.onChanged,
-    required this.onIcon,
-  });
+  const _SideSlider({required this.icon, required this.value, required this.onChanged, required this.onIcon});
 
   final IconData icon;
   final double value;
@@ -1837,14 +2137,8 @@ class _LiveMark extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE50914),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        'CANLI',
-        style: MiaType.outfit(13, 700, letterSpacing: 1.4, color: Colors.white),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFFE50914), borderRadius: BorderRadius.circular(4)),
+      child: Text('CANLI', style: MiaType.outfit(13, 700, letterSpacing: 1.4, color: Colors.white)),
     );
   }
 }
@@ -1893,5 +2187,109 @@ enum _Stage {
       cinema => zoom,
       zoom => fit,
     };
+  }
+}
+
+class _GlassButton extends StatelessWidget {
+  const _GlassButton({
+    required this.size,
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    this.focusNode,
+    this.strong = false,
+  });
+
+  final double size;
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final FocusNode? focusNode;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: ClipOval(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Material(
+            color: strong ? const Color(0x33FFFFFF) : const Color(0x26000000),
+            shape: CircleBorder(
+              side: BorderSide(color: strong ? const Color(0x80FFFFFF) : const Color(0x40FFFFFF), width: 1.5),
+            ),
+            child: InkWell(
+              focusNode: focusNode,
+              customBorder: const CircleBorder(),
+              focusColor: const Color(0x80FFFFFF),
+              onTap: onPressed,
+              child: SizedBox(
+                width: size,
+                height: size,
+                child: Icon(icon, size: size * 0.56, color: onPressed == null ? Colors.white30 : Colors.white),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NextUp extends StatelessWidget {
+  const _NextUp({required this.title, required this.seconds, required this.onPlay});
+
+  final String title;
+  final int seconds;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          width: 300,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xB3141418),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0x33FFFFFF)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'SONRAKİ BÖLÜM',
+                style: MiaType.manrope(11, 800, color: const Color(0xFFE50914)).copyWith(letterSpacing: 1.6),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: MiaType.manrope(15, 750, color: Colors.white),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                autofocus: true,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  minimumSize: const Size(double.infinity, 42),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ).copyWith(side: MiaTheme.lightFocusRing),
+                onPressed: onPlay,
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: Text('Şimdi oynat · $seconds sn', style: MiaType.manrope(14, 800, color: Colors.black)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

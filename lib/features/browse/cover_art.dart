@@ -109,13 +109,9 @@ class PosterCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(4),
-                child: image,
-              ),
+            child: FocusFrame(
+              onTap: onTap,
+              child: image,
             ),
           ),
           if (titleBelow) ...[
@@ -137,6 +133,68 @@ class PosterCard extends StatelessWidget {
             ],
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Kumandayla odaklanınca büyüyen, beyaz çerçeve alan dokunma alanı.
+class FocusFrame extends StatefulWidget {
+  const FocusFrame({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.radius = 4,
+    this.autofocus = false,
+    this.scale = 1.06,
+  });
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final double radius;
+  final bool autofocus;
+  final double scale;
+
+  @override
+  State<FocusFrame> createState() => _FocusFrameState();
+}
+
+class _FocusFrameState extends State<FocusFrame> {
+  var _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(widget.radius);
+    return AnimatedScale(
+      scale: _focused ? widget.scale : 1,
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOut,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          autofocus: widget.autofocus,
+          borderRadius: radius,
+          focusColor: Colors.transparent,
+          onFocusChange: (value) => setState(() => _focused = value),
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              widget.child,
+              if (_focused)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: radius,
+                        border: Border.all(color: Colors.white, width: 3),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

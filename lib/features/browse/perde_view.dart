@@ -1,8 +1,13 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
 
+import '../../core/device.dart';
 import '../../core/look.dart';
 import '../../core/theme.dart';
+import '../../core/tv_pager.dart';
 import '../assist/library_mind.dart';
 import '../library/user_library.dart';
 import '../playback/media_entry.dart';
@@ -55,20 +60,36 @@ class _PerdeViewState extends State<PerdeView> {
 
   @override
   void dispose() {
+    _washTimer?.cancel();
     _pages.dispose();
     super.dispose();
   }
 
-  Future<void> _wash(MediaEntry entry) async {
+  Timer? _washTimer;
+
+  /// Tema rengi değişince tüm uygulama yeniden çizilir; hızlı geçişlerde
+  /// yalnızca son sayfa için ve küçük bir kopyadan renk çıkarılır.
+  void _wash(MediaEntry entry) {
+    if (MiaDevice.isTv) {
+      return;
+    }
+    _washTimer?.cancel();
+    _washTimer = Timer(const Duration(milliseconds: 700), () => _washNow(entry));
+  }
+
+  Future<void> _washNow(MediaEntry entry) async {
+    if (!mounted) {
+      return;
+    }
     final look = LookScope.of(context);
     final art = entry.backdrop ?? entry.artwork;
-    if (art == null) {
+    if (art == null || kIsWeb) {
       look.setRoom(inkFor(entry.title));
       return;
     }
     try {
       final palette = await PaletteGenerator.fromImageProvider(
-        NetworkImage(art, headers: const {'User-Agent': 'MiaStream'}),
+        ResizeImage(NetworkImage(art, headers: const {'User-Agent': 'MiaStream'}), width: 96),
         maximumColorCount: 8,
       );
       final color = palette.vibrantColor?.color ?? palette.dominantColor?.color ?? inkFor(entry.title);
@@ -123,19 +144,25 @@ class _PerdeViewState extends State<PerdeView> {
     }
   }
 
-  void _step(int delta) {
+  Future<bool> _step(int delta) async {
     final next = _index + delta;
     if (next < 0 || next >= widget.entries.length) {
-      return;
+      return false;
     }
-    _pages.animateToPage(next, duration: const Duration(milliseconds: 420), curve: Curves.easeOut);
+    await _pages.animateToPage(next, duration: const Duration(milliseconds: 380), curve: Curves.easeOut);
+    return true;
   }
 
   @override
   Widget build(BuildContext context) {
+    return TvPager(onStep: _step, child: _board(context));
+  }
+
+  Widget _board(BuildContext context) {
     if (widget.card) {
       return _CardBoard(
         pages: _pages,
+        current: _index,
         entries: widget.entries,
         contain: widget.contain,
         compact: widget.compact,
@@ -174,119 +201,133 @@ class _PerdeViewState extends State<PerdeView> {
                 if (item.minutes != null && item.minutes! > 0) '${item.minutes} dk',
                 if (item.genre != null && item.genre!.isNotEmpty) item.genre!,
               ].join('  ·  ');
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  const ColoredBox(color: Color(0xFF141414)),
-                  if (art == null)
-                    TypographicPoster(title: item.title)
-                  else
-                    CoverImage(
-                      url: art,
-                      fit: widget.contain ? BoxFit.contain : BoxFit.cover,
-                      fallback: TypographicPoster(title: item.title),
-                    ),
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: [Color(0xF2141414), Color(0xB3141414), Color(0x33141414), Color(0x00141414)],
-                        stops: [0, 0.28, 0.55, 0.82],
+              return ExcludeFocus(
+                excluding: index != _index,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const ColoredBox(color: Color(0xFF0B0B0F)),
+                    if (art == null)
+                      TypographicPoster(title: item.title)
+                    else
+                      CoverImage(
+                        url: art,
+                        fit: widget.contain ? BoxFit.contain : BoxFit.cover,
+                        fallback: TypographicPoster(title: item.title),
                       ),
-                    ),
-                  ),
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [Color(0xFF141414), Color(0xCC141414), Color(0x00141414)],
-                        stops: [0, 0.18, 0.55],
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(wide ? 56 : 20, top, wide ? 120 : 20, wide ? 72 : 36),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        SizedBox(
-                          width: wide ? 520 : double.infinity,
-                          child: Text(
-                            item.title,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: MiaType.outfit(wide ? 64 : 36, 700, letterSpacing: -1.1, height: 0.96, color: Colors.white),
-                          ),
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [Color(0xF20B0B0F), Color(0xB30B0B0F), Color(0x330B0B0F), Color(0x000B0B0F)],
+                          stops: [0, 0.28, 0.55, 0.82],
                         ),
-                        if (meta.isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: MiaType.manrope(14, 600, color: const Color(0xFFE5E5E5))),
-                        ],
-                        if (breath != null) ...[
-                          const SizedBox(height: 12),
+                      ),
+                    ),
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [Color(0xFF0B0B0F), Color(0xCC0B0B0F), Color(0x000B0B0F)],
+                          stops: [0, 0.18, 0.55],
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(wide ? 56 : 20, top, wide ? 120 : 20, wide ? 72 : 36),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
                           SizedBox(
-                            width: wide ? 460 : double.infinity,
+                            width: wide ? 520 : double.infinity,
                             child: Text(
-                              breath,
+                              item.title,
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
-                              style: MiaType.manrope(16, 500, color: const Color(0xFFE5E5E5)),
+                              style: MiaType.outfit(
+                                wide ? 64 : 36,
+                                700,
+                                letterSpacing: -1.1,
+                                height: 0.96,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
-                        ],
-                        const SizedBox(height: 18),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: Colors.black,
-                                padding: EdgeInsets.symmetric(horizontal: wide ? 26 : 16, vertical: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                              ),
-                              onPressed: () => widget.onPlay(item),
-                              icon: const Icon(Icons.play_arrow, size: 30),
-                              label: Text('Oynat', style: MiaType.manrope(16, 700, color: Colors.black)),
-                            ),
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xB36D6D6E),
-                                foregroundColor: Colors.white,
-                                padding: EdgeInsets.symmetric(horizontal: wide ? 22 : 14, vertical: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                              ),
-                              onPressed: () => widget.onPlay(item),
-                              icon: const Icon(Icons.info_outline, size: 24),
-                              label: Text('Daha Fazla Bilgi', style: MiaType.manrope(16, 700, color: Colors.white)),
+                          if (meta.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              meta,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: MiaType.manrope(14, 600, color: const Color(0xFFE5E5E5)),
                             ),
                           ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (item.rating != null && item.rating!.trim().isNotEmpty)
-                    Positioned(
-                      right: 0,
-                      bottom: wide ? 120 : 48,
-                      child: Container(
-                        padding: const EdgeInsets.fromLTRB(8, 6, 14, 6),
-                        decoration: const BoxDecoration(
-                          color: Color(0x66333333),
-                          border: Border(left: BorderSide(color: Colors.white, width: 3)),
-                        ),
-                        child: Text(item.rating!, style: MiaType.manrope(14, 700, color: Colors.white)),
+                          if (breath != null) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: wide ? 460 : double.infinity,
+                              child: Text(
+                                breath,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: MiaType.manrope(16, 500, color: const Color(0xFFE5E5E5)),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: Colors.black,
+                                  padding: EdgeInsets.symmetric(horizontal: wide ? 26 : 16, vertical: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                ).copyWith(side: MiaTheme.lightFocusRing),
+                                onPressed: () => widget.onPlay(item),
+                                icon: const Icon(Icons.play_arrow, size: 30),
+                                label: Text('Oynat', style: MiaType.manrope(16, 700, color: Colors.black)),
+                              ),
+                              FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xB36D6D6E),
+                                  foregroundColor: Colors.white,
+                                  padding: EdgeInsets.symmetric(horizontal: wide ? 22 : 14, vertical: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                ),
+                                onPressed: () => widget.onPlay(item),
+                                icon: const Icon(Icons.info_outline, size: 24),
+                                label: Text('Daha Fazla Bilgi', style: MiaType.manrope(16, 700, color: Colors.white)),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                ],
+                    if (item.rating != null && item.rating!.trim().isNotEmpty)
+                      Positioned(
+                        right: 0,
+                        bottom: wide ? 120 : 48,
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(8, 6, 14, 6),
+                          decoration: const BoxDecoration(
+                            color: Color(0x66333333),
+                            border: Border(left: BorderSide(color: Colors.white, width: 3)),
+                          ),
+                          child: Text(item.rating!, style: MiaType.manrope(14, 700, color: Colors.white)),
+                        ),
+                      ),
+                  ],
+                ),
               );
             },
           ),
-          if (wide && widget.entries.length > 1) ...[
+          if (wide && widget.entries.length > 1 && !MiaDevice.isTv) ...[
             Positioned(
               left: 0,
               top: top,
@@ -309,6 +350,7 @@ class _PerdeViewState extends State<PerdeView> {
 class _CardBoard extends StatelessWidget {
   const _CardBoard({
     required this.pages,
+    required this.current,
     required this.entries,
     required this.contain,
     this.compact = false,
@@ -320,6 +362,7 @@ class _CardBoard extends StatelessWidget {
   });
 
   final PageController pages;
+  final int current;
   final List<MediaEntry> entries;
   final bool contain;
   final bool compact;
@@ -367,94 +410,97 @@ class _CardBoard extends StatelessWidget {
                   ShellSection.movies => 'Filmi Oynat',
                   _ => 'Oynat',
                 };
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    const ColoredBox(color: Color(0xFF1A1A1A)),
-                    if (art == null)
-                      TypographicPoster(title: item.title)
-                    else
-                      CoverImage(
-                        url: art,
-                        fit: contain ? BoxFit.contain : BoxFit.cover,
-                        fallback: TypographicPoster(title: item.title),
-                      ),
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Color(0x00000000), Color(0x33000000), Color(0xF0141414)],
-                          stops: [0.35, 0.62, 1],
+                return ExcludeFocus(
+                  excluding: page != current,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      const ColoredBox(color: Color(0xFF1A1A1A)),
+                      if (art == null)
+                        TypographicPoster(title: item.title)
+                      else
+                        CoverImage(
+                          url: art,
+                          fit: contain ? BoxFit.contain : BoxFit.cover,
+                          fallback: TypographicPoster(title: item.title),
+                        ),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x00000000), Color(0x33000000), Color(0xF00B0B0F)],
+                            stops: [0.35, 0.62, 1],
+                          ),
                         ),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Text(
-                            item.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: MiaType.outfit(32, 700, letterSpacing: -0.6, height: 0.98, color: Colors.white),
-                          ),
-                          if (blurb != null) ...[
-                            const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
                             Text(
-                              blurb,
+                              item.title,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: MiaType.manrope(13, 500, color: const Color(0xFFE5E5E5)),
+                              style: MiaType.outfit(32, 700, letterSpacing: -0.6, height: 0.98, color: Colors.white),
                             ),
-                          ],
-                          if (meta.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              meta,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: MiaType.manrope(12, 600, color: const Color(0xFFE5E5E5)),
-                            ),
-                          ],
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: Colors.black,
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  onPressed: () => onPlay(item),
-                                  icon: const Icon(Icons.play_arrow, size: 26),
-                                  label: Text(play, style: MiaType.manrope(14, 700, color: Colors.black)),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF3A3A3A),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  onPressed: onList == null ? null : () => onList!(item),
-                                  icon: Icon(saved ? Icons.check : Icons.add, size: 20),
-                                  label: Text('Listem', style: MiaType.manrope(14, 700, color: Colors.white)),
-                                ),
+                            if (blurb != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                blurb,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: MiaType.manrope(13, 500, color: const Color(0xFFE5E5E5)),
                               ),
                             ],
-                          ),
-                        ],
+                            if (meta.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                meta,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: MiaType.manrope(12, 600, color: const Color(0xFFE5E5E5)),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: Colors.black,
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ).copyWith(side: MiaTheme.lightFocusRing),
+                                    onPressed: () => onPlay(item),
+                                    icon: const Icon(Icons.play_arrow, size: 26),
+                                    label: Text(play, style: MiaType.manrope(14, 700, color: Colors.black)),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFF3A3A3A),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    onPressed: onList == null ? null : () => onList!(item),
+                                    icon: Icon(saved ? Icons.check : Icons.add, size: 20),
+                                    label: Text('Listem', style: MiaType.manrope(14, 700, color: Colors.white)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               },
             ),
@@ -474,13 +520,10 @@ class _BillboardArrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0x66141414),
+      color: const Color(0x660B0B0F),
       child: InkWell(
         onTap: onTap,
-        child: SizedBox(
-          width: 48,
-          child: Icon(icon, color: Colors.white, size: 42),
-        ),
+        child: SizedBox(width: 48, child: Icon(icon, color: Colors.white, size: 42)),
       ),
     );
   }

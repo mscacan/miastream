@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../features/playback/track_labels.dart';
 import '../features/shell/shell_section.dart';
 import 'theme.dart';
+import 'web_disk.dart';
 
 enum MiaMood { sinema, gece, kum }
 
@@ -60,6 +62,9 @@ class MiaLook extends ChangeNotifier {
   }
 
   void setRoom(Color accent) {
+    if (roomAccent == accent) {
+      return;
+    }
     roomAccent = accent;
     roomGlow = Color.lerp(accent, Colors.black, 0.45) ?? accent;
     notifyListeners();
@@ -174,11 +179,17 @@ class MiaLook extends ChangeNotifier {
     }
     _loaded = true;
     try {
-      final file = File('${(await getApplicationSupportDirectory()).path}/gorunum.json');
-      if (!file.existsSync()) {
+      final String? body;
+      if (kIsWeb) {
+        body = WebDisk.read('gorunum.json');
+      } else {
+        final file = File('${(await getApplicationSupportDirectory()).path}/gorunum.json');
+        body = await file.exists() ? await file.readAsString() : null;
+      }
+      if (body == null) {
         return;
       }
-      final decoded = jsonDecode(await file.readAsString());
+      final decoded = jsonDecode(body);
       if (decoded is! Map) {
         return;
       }
@@ -220,9 +231,7 @@ class MiaLook extends ChangeNotifier {
 
   Future<void> _save() async {
     try {
-      final file = File('${(await getApplicationSupportDirectory()).path}/gorunum.json');
-      await file.writeAsString(
-        jsonEncode({
+      final body = jsonEncode({
           'opening': openingPage,
           'audioPrimary': audioPrimary,
           'audioSecondary': audioSecondary,
@@ -239,8 +248,13 @@ class MiaLook extends ChangeNotifier {
           'dataSave': dataSave,
           'homeRails': homeRails,
           'mood': mood.name,
-        }),
-      );
+        });
+      if (kIsWeb) {
+        WebDisk.write('gorunum.json', body);
+        return;
+      }
+      final file = File('${(await getApplicationSupportDirectory()).path}/gorunum.json');
+      await file.writeAsString(body);
     } catch (_) {}
   }
 }

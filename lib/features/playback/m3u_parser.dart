@@ -98,16 +98,26 @@ bool _isAbsoluteHttp(String line) {
   return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
 }
 
+final _attrPatterns = <String, (RegExp, RegExp, RegExp)>{};
+
 String? _attr(String line, String name) {
-  final quoted = RegExp('$name\\s*=\\s*"([^"]*)"', caseSensitive: false).firstMatch(line);
+  final (quotedPattern, singlePattern, barePattern) = _attrPatterns.putIfAbsent(
+    name,
+    () => (
+      RegExp('$name\\s*=\\s*"([^"]*)"', caseSensitive: false),
+      RegExp("$name\\s*=\\s*'([^']*)'", caseSensitive: false),
+      RegExp('$name\\s*=\\s*([^\\s,]*)', caseSensitive: false),
+    ),
+  );
+  final quoted = quotedPattern.firstMatch(line);
   if (quoted != null) {
     return quoted.group(1)?.trim();
   }
-  final single = RegExp("$name\\s*=\\s*'([^']*)'", caseSensitive: false).firstMatch(line);
+  final single = singlePattern.firstMatch(line);
   if (single != null) {
     return single.group(1)?.trim();
   }
-  final bare = RegExp('$name\\s*=\\s*([^\\s,]*)', caseSensitive: false).firstMatch(line);
+  final bare = barePattern.firstMatch(line);
   final value = bare?.group(1)?.trim();
   if (value == null || value.isEmpty) {
     return null;

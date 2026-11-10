@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/web_disk.dart';
 import '../playback/media_entry.dart';
 import '../playback/source_loader.dart';
 import '../shell/shell_section.dart';
@@ -66,14 +67,24 @@ class UserLibrary extends ChangeNotifier {
 
   List<String> get messages => List.unmodifiable(_errors.values);
 
-  List<MediaEntry> get entries => [for (final list in _entries.values) ...list];
+  List<MediaEntry> get entries => _all ??= List.unmodifiable([for (final list in _entries.values) ...list]);
 
+  /// Her çizimde on binlerce kaydı yeniden süzmemek için bölüm başına saklanır.
   List<MediaEntry> entriesFor(ShellSection section) {
-    return [
+    return _bySection[section] ??= List.unmodifiable([
       for (final list in _entries.values)
         for (final entry in list)
           if (entry.section == section) entry,
-    ];
+    ]);
+  }
+
+  List<MediaEntry>? _all;
+  final Map<ShellSection, List<MediaEntry>> _bySection = {};
+  DateTime _lastPulse = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _catalogChanged() {
+    _all = null;
+    _bySection.clear();
   }
 
   bool isFavorite(String id) => _favorites.contains(id);
@@ -204,6 +215,7 @@ class UserLibrary extends ChangeNotifier {
   Future<void> drop(String id) async {
     _items.removeWhere((item) => item.id == id);
     _entries.remove(id);
+    _catalogChanged();
     _errors.remove(id);
     _notify();
     await _persist();
@@ -228,6 +240,7 @@ class UserLibrary extends ChangeNotifier {
         return 'Kaynak yanıt vermedi';
       }
       _entries[stored.id] = entries;
+      _catalogChanged();
       _errors.remove(stored.id);
       _savedAt = _now();
       await _persist();
@@ -255,6 +268,7 @@ class UserLibrary extends ChangeNotifier {
         return false;
       }
       _entries[source.id] = entries;
+      _catalogChanged();
       _errors.remove(source.id);
       return true;
     } on SourceLoadException catch (error) {
@@ -271,14 +285,25 @@ class UserLibrary extends ChangeNotifier {
     }
   }
 
+  Future<String?> _readText(String name) async {
+    if (kIsWeb) {
+      return WebDisk.read(name);
+    }
+    final dir = await _directory();
+    final file = File('${dir.path}/$name');
+    if (!await file.exists()) {
+      return null;
+    }
+    return file.readAsString();
+  }
+
   Future<void> _read() async {
     try {
-      final dir = await _directory();
-      final file = File('${dir.path}/kaynaklar.json');
-      if (!file.existsSync()) {
+      final body = await _readText('kaynaklar.json');
+      if (body == null) {
         return;
       }
-      final decoded = jsonDecode(await file.readAsString());
+      final decoded = jsonDecode(body);
       final rows = decoded is List
           ? decoded
           : decoded is Map
@@ -305,50 +330,41 @@ class UserLibrary extends ChangeNotifier {
           }
         }
       }
-      final catalog = File('${dir.path}/katalog.json');
-      if (!catalog.existsSync()) {
+      final catalog = await _readText('katalog.json');
+      if (catalog == null) {
         return;
       }
-      final listed = jsonDecode(await catalog.readAsString());
-      if (listed is! List) {
-        return;
-      }
-      for (final item in listed) {
-        if (item is! Map) {
-          continue;
+      final known = {for (final source in _items) source.id};
+      final listed = await _away(_decodeCatalog, catalog);
+      for (final entry in listed) {
+        if (known.contains(entry.sourceId)) {
+          _entries.putIfAbsent(entry.sourceId, () => []).add(entry);
         }
-        final entry = mediaEntryFrom(item);
-        if (entry == null || _items.every((source) => source.id != entry.sourceId)) {
-          continue;
-        }
-        _entries.putIfAbsent(entry.sourceId, () => []).add(entry);
       }
+      _catalogChanged();
     } catch (_) {}
   }
 
   Future<void> _persist({bool catalog = true}) async {
     try {
-      final dir = await _directory();
-      await _writeAtomic(
-        dir,
-        'kaynaklar.json',
-        jsonEncode({
-          'refresh': _refresh,
-          'savedAt': _savedAt?.toUtc().toIso8601String(),
-          'sources': sourceBag(),
-        }),
-      );
-      if (!catalog) {
+      final sources = jsonEncode({
+        'refresh': _refresh,
+        'savedAt': _savedAt?.toUtc().toIso8601String(),
+        'sources': sourceBag(),
+      });
+      final body = catalog ? await _away(_encodeCatalog, entries) : null;
+      if (kIsWeb) {
+        WebDisk.write('kaynaklar.json', sources);
+        if (body != null) {
+          WebDisk.write('katalog.json', body);
+        }
         return;
       }
-      await _writeAtomic(
-        dir,
-        'katalog.json',
-        jsonEncode([
-          for (final list in _entries.values)
-            for (final entry in list) entry.toJson(),
-        ]),
-      );
+      final dir = await _directory();
+      await _writeAtomic(dir, 'kaynaklar.json', sources);
+      if (body != null) {
+        await _writeAtomic(dir, 'katalog.json', body);
+      }
     } catch (_) {}
   }
 
@@ -370,9 +386,15 @@ class UserLibrary extends ChangeNotifier {
     await tmp.rename(file.path);
   }
 
+  /// Yükleme sayacı ekranı her adımda baştan çizdirmesin.
   void _pulse(String label, int count) {
     loadLabel = label;
     loadCount = count;
+    final now = DateTime.now();
+    if (now.difference(_lastPulse) < const Duration(milliseconds: 400)) {
+      return;
+    }
+    _lastPulse = now;
     _notify();
   }
 
@@ -387,6 +409,30 @@ class UserLibrary extends ChangeNotifier {
     _disposed = true;
     super.dispose();
   }
+}
+
+/// Ağır işi ayrı iş parçacığına verir. Widget testlerinin sahte saati
+/// iş parçacığı yanıtını beklemez; orada aynı yerde çalışır.
+Future<R> _away<Q, R>(R Function(Q) job, Q input) async {
+  if (kIsWeb || Platform.environment.containsKey('FLUTTER_TEST')) {
+    return job(input);
+  }
+  return compute(job, input);
+}
+
+List<MediaEntry> _decodeCatalog(String body) {
+  final listed = jsonDecode(body);
+  if (listed is! List) {
+    return const [];
+  }
+  return [
+    for (final item in listed)
+      if (item is Map) ?mediaEntryFrom(item),
+  ];
+}
+
+String _encodeCatalog(List<MediaEntry> entries) {
+  return jsonEncode([for (final entry in entries) entry.toJson()]);
 }
 
 UserSource _stored(UserSource source) {

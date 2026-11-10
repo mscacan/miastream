@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'core/brand.dart';
+import 'core/device.dart';
 import 'core/look.dart';
 import 'core/mia_mark.dart';
 import 'core/rules.dart';
@@ -15,6 +17,22 @@ import 'features/playback/playback_bus.dart';
 import 'features/playback/source_loader.dart';
 import 'features/shell/app_shell.dart';
 import 'features/sync/lounge_link.dart';
+
+/// Kumandanın orta tuşu ve oyun kumandası A tuşu da seçer.
+final Map<ShortcutActivator, Intent> _remoteShortcuts = {
+  ...WidgetsApp.defaultShortcuts,
+  const SingleActivator(LogicalKeyboardKey.select): const ActivateIntent(),
+  const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
+  const SingleActivator(LogicalKeyboardKey.numpadEnter): const ActivateIntent(),
+  const SingleActivator(LogicalKeyboardKey.gameButtonA): const ActivateIntent(),
+  // Web'de oklar varsayılan olarak sayfayı kaydırır; TV modunda odak taşımalı.
+  if (MiaDevice.isTv) ...{
+    const SingleActivator(LogicalKeyboardKey.arrowUp): const DirectionalFocusIntent(TraversalDirection.up),
+    const SingleActivator(LogicalKeyboardKey.arrowDown): const DirectionalFocusIntent(TraversalDirection.down),
+    const SingleActivator(LogicalKeyboardKey.arrowLeft): const DirectionalFocusIntent(TraversalDirection.left),
+    const SingleActivator(LogicalKeyboardKey.arrowRight): const DirectionalFocusIntent(TraversalDirection.right),
+  },
+};
 
 class MiaStreamApp extends StatefulWidget {
   const MiaStreamApp({super.key, this.loader});
@@ -38,6 +56,9 @@ class _MiaStreamAppState extends State<MiaStreamApp> {
   @override
   void initState() {
     super.initState();
+    if (MiaDevice.isTv) {
+      FocusManager.instance.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    }
     _keeps.ensureLoaded();
     _look.ensureLoaded();
     _library.restore().whenComplete(() {
@@ -73,6 +94,8 @@ class _MiaStreamAppState extends State<MiaStreamApp> {
           title: Brand.name,
           debugShowCheckedModeBanner: false,
           theme: MiaTheme.data(_look.palette),
+          themeAnimationDuration: Duration.zero,
+          shortcuts: _remoteShortcuts,
           builder: (context, child) => LookScope(
             look: _look,
             child: CoverScope(store: _covers, child: child!),
@@ -85,7 +108,7 @@ class _MiaStreamAppState extends State<MiaStreamApp> {
                 builder: (context, _) {
                   if (!_sourcesReady) {
                     return const ColoredBox(
-                      color: Color(0xFF141414),
+                      color: Color(0xFF0B0B0F),
                       child: Center(child: MiaWord(size: 42)),
                     );
                   }

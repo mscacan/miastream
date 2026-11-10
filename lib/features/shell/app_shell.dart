@@ -1,7 +1,11 @@
+import 'dart:ui' show ImageFilter;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../core/brand.dart';
+import '../../core/device.dart';
 import '../../core/look.dart';
 import '../../core/mia_mark.dart';
 import '../../core/theme.dart';
@@ -47,6 +51,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _scrolled = ValueNotifier(false);
   var _section = ShellSection.live;
   var _sharedUrl = '';
   var _openingApplied = false;
@@ -70,6 +75,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     widget.link.removeListener(_onLink);
+    _scrolled.dispose();
     super.dispose();
   }
 
@@ -270,7 +276,17 @@ class _AppShellState extends State<AppShell> {
       ),
       body: Stack(
         children: [
-          Positioned.fill(child: _body()),
+          Positioned.fill(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (note) {
+                if (note.depth == 0 && note.metrics.axis == Axis.vertical) {
+                  _scrolled.value = note.metrics.pixels > 24;
+                }
+                return false;
+              },
+              child: _body(),
+            ),
+          ),
           Positioned(
             top: 0,
             left: 0,
@@ -278,7 +294,11 @@ class _AppShellState extends State<AppShell> {
             child: _TopBar(
               phone: phone,
               section: _section,
-              onSelect: (section) => setState(() => _section = section),
+              scrolled: _scrolled,
+              onSelect: (section) {
+                _scrolled.value = false;
+                setState(() => _section = section);
+              },
               onMenu: () => _scaffoldKey.currentState?.openDrawer(),
               onCast: () => showCastSheet(context),
               onEpg: () {
@@ -361,7 +381,7 @@ class _AppShellState extends State<AppShell> {
           onPlay: _openEntry,
         ),
     };
-    if (catalog) {
+    if (catalog || _section == ShellSection.home) {
       return page;
     }
     final phone = miaIsPhone(context);
@@ -375,6 +395,7 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.phone,
     required this.section,
+    required this.scrolled,
     required this.onSelect,
     required this.onMenu,
     required this.onCast,
@@ -384,6 +405,7 @@ class _TopBar extends StatelessWidget {
 
   final bool phone;
   final ShellSection section;
+  final ValueListenable<bool> scrolled;
   final ValueChanged<ShellSection> onSelect;
   final VoidCallback onMenu;
   final VoidCallback onCast;
@@ -392,19 +414,47 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final overlay = section == ShellSection.home ||
+        section == ShellSection.live ||
+        section == ShellSection.series ||
+        section == ShellSection.movies;
+    return ValueListenableBuilder<bool>(
+      valueListenable: scrolled,
+      builder: (context, down, child) {
+        final glass = down || !overlay;
+        return ClipRect(
+          child: BackdropFilter(
+            enabled: glass,
+            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 280),
+              decoration: BoxDecoration(
+                color: glass ? const Color(0xD90B0B0F) : const Color(0x000B0B0F),
+                gradient: glass
+                    ? null
+                    : const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xB3000000), Color(0x4D000000), Color(0x00000000)],
+                        stops: [0, 0.6, 1],
+                      ),
+                border: Border(
+                  bottom: BorderSide(color: glass ? const Color(0x14FFFFFF) : const Color(0x00FFFFFF)),
+                ),
+              ),
+              child: child,
+            ),
+          ),
+        );
+      },
+      child: _bar(context),
+    );
+  }
+
+  Widget _bar(BuildContext context) {
     final browse = phone && section != ShellSection.search && section != ShellSection.menu;
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: phone ? const Color(0xFF141414) : null,
-        gradient: phone
-            ? null
-            : const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xE6000000), Color(0x66000000), Color(0x00000000)],
-                stops: [0, 0.55, 1],
-              ),
-      ),
+      decoration: const BoxDecoration(),
       child: SafeArea(
         bottom: false,
         child: Column(
@@ -415,19 +465,24 @@ class _TopBar extends StatelessWidget {
               child: Row(
                 children: [
                   if (phone)
-                    GestureDetector(
+                    InkWell(
                       onTap: onMenu,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 16, right: 8),
-                        child: const MiaWord(size: 22, compact: true),
+                      borderRadius: BorderRadius.circular(6),
+                      child: const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 6, 8, 6),
+                        child: MiaWord(size: 20, compact: true),
                       ),
                     )
                   else
                     Padding(
-                      padding: const EdgeInsets.only(left: 48),
-                      child: GestureDetector(
+                      padding: const EdgeInsets.only(left: 40),
+                      child: InkWell(
                         onTap: () => onSelect(ShellSection.home),
-                        child: const MiaWord(size: 22),
+                        borderRadius: BorderRadius.circular(6),
+                        child: const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: MiaWord(size: 24, compact: true),
+                        ),
                       ),
                     ),
                   if (phone)
@@ -440,7 +495,7 @@ class _TopBar extends StatelessWidget {
                       ),
                     )
                   else ...[
-                    const SizedBox(width: 28),
+                    const SizedBox(width: 20),
                     for (final item in const [
                       ShellSection.home,
                       ShellSection.live,
@@ -449,19 +504,36 @@ class _TopBar extends StatelessWidget {
                       ShellSection.bot,
                     ])
                       Padding(
-                        padding: const EdgeInsets.only(right: 18),
+                        padding: const EdgeInsets.only(right: 8),
                         child: InkWell(
                           onTap: () => onSelect(item),
-                          borderRadius: BorderRadius.circular(4),
+                          autofocus: MiaDevice.isTv && item == section,
+                          borderRadius: BorderRadius.circular(6),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Text(
-                              item.label,
-                              style: MiaType.manrope(
-                                14,
-                                item == section ? 700 : 500,
-                                color: item == section ? Colors.white : const Color(0xFFE5E5E5),
-                              ),
+                            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  item.label,
+                                  style: MiaType.manrope(
+                                    15,
+                                    item == section ? 800 : 550,
+                                    color: item == section ? Colors.white : const Color(0xFFB9B9C2),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 260),
+                                  curve: Curves.easeOut,
+                                  width: item == section ? 18 : 0,
+                                  height: 3,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE50914),
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -728,9 +800,9 @@ class _MiniPlayer extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            GestureDetector(
-              onTap: onOpen,
-              child: Video(controller: video, controls: NoVideoControls, fit: BoxFit.cover),
+            Video(controller: video, controls: NoVideoControls, fit: BoxFit.cover),
+            Positioned.fill(
+              child: InkWell(onTap: onOpen),
             ),
             Positioned(
               left: 8,

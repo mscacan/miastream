@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/brand.dart';
+import '../../core/device.dart';
+import '../../core/mia_mark.dart';
 import '../../core/theme.dart';
 
 /// Kayıtlı kaynak yokken açılan ekran. Tek eylem kaynak eklemektir.
@@ -26,12 +28,8 @@ class SourceEntry extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  Brand.name,
-                  textAlign: TextAlign.center,
-                  style: MiaType.outfit(52, 650, letterSpacing: -1.1, height: 1, color: Colors.white),
-                ),
-                const SizedBox(height: 10),
+                const MiaWord(size: 72),
+                const SizedBox(height: 22),
                 Text(
                   Brand.storeSubtitle,
                   textAlign: TextAlign.center,
@@ -40,6 +38,7 @@ class SourceEntry extends StatelessWidget {
                 const SizedBox(height: 36),
                 FilledButton(
                   onPressed: onAdd,
+                  autofocus: MiaDevice.isTv,
                   child: const Text('Kaynak Ekle'),
                 ),
               ],

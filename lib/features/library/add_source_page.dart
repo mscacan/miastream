@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../core/device.dart';
 import '../../core/mia_mark.dart';
 import '../../core/theme.dart';
+import '../browse/cover_art.dart';
 import 'user_library.dart';
 import 'user_source.dart';
 
@@ -87,6 +89,7 @@ class _KindPicker extends StatelessWidget {
           icon: Icons.playlist_play,
           title: 'M3U / M3U8 Oynatma Listesi',
           body: 'Liste adresini yapıştır.',
+          autofocus: MiaDevice.isTv,
           onTap: () => onPick(UserSourceKind.m3u),
         ),
         _KindCard(
@@ -112,26 +115,28 @@ class _KindCard extends StatelessWidget {
     required this.title,
     required this.body,
     required this.onTap,
+    this.autofocus = false,
   });
 
   final IconData icon;
   final String title;
   final String body;
   final VoidCallback onTap;
+  final bool autofocus;
 
   @override
   Widget build(BuildContext context) {
     final mia = context.mia;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: mia.card,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Ink(
+      child: FocusFrame(
+        onTap: onTap,
+        autofocus: autofocus,
+        radius: 16,
+        scale: 1.02,
+        child: Ink(
             decoration: BoxDecoration(
+              color: mia.card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: mia.line),
             ),
@@ -164,7 +169,6 @@ class _KindCard extends StatelessWidget {
               ),
             ),
           ),
-        ),
       ),
     );
   }

@@ -49,7 +49,7 @@ void main() {
     await tester.pumpWidget(const MiaStreamApp(loader: _QuietLoader()));
     await tester.pump(const Duration(seconds: 3));
 
-    expect(find.text('Mia Stream'), findsOneWidget);
+    expect(find.bySemanticsLabel('Mia Stream'), findsOneWidget);
     expect(find.text('kişisel medya oynatıcı'), findsOneWidget);
     expect(find.text('Kaynak Ekle'), findsOneWidget);
     expect(find.textContaining('kişisel medya oynatıcıdır'), findsOneWidget);
@@ -163,8 +163,8 @@ void main() {
 
     final hero = tester.getSize(find.byKey(const Key('title-hero')));
     expect(hero.width, 1400);
-    expect(hero.height, 640);
+    expect(hero.height, 900 * 0.84);
     expect(find.text('Oynat'), findsOneWidget);
-    expect(find.text('Listem'), findsOneWidget);
+    expect(find.byTooltip('Listeme ekle'), findsOneWidget);
   });
 }

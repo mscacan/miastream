@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+
 import '../library/user_source.dart';
 import '../shell/shell_section.dart';
 import 'artwork.dart';
@@ -46,7 +49,7 @@ Future<List<MediaEntry>> _loadM3u(UserSource source, {LoadPulse? onPulse}) async
   onPulse?.call('Liste okunuyor', 0);
   final raw = source.value.trim();
   if (raw.startsWith('#EXTM3U') || raw.startsWith('#EXTINF')) {
-    final entries = parseM3u(raw, sourceId: source.id);
+    final entries = await _parseM3uAway(raw, source.id);
     onPulse?.call('Liste hazır', entries.length);
     return entries;
   }
@@ -66,10 +69,21 @@ Future<List<MediaEntry>> _loadM3u(UserSource source, {LoadPulse? onPulse}) async
       ),
     ];
   }
-  final entries = parseM3u(body, sourceId: source.id);
+  onPulse?.call('Liste ayrıştırılıyor', 0);
+  final entries = await _parseM3uAway(body, source.id);
   onPulse?.call('Liste hazır', entries.length);
   return entries;
 }
+
+/// Büyük listeler ekranı dondurmasın diye ayrı iş parçacığında ayrıştırılır.
+Future<List<MediaEntry>> _parseM3uAway(String body, String sourceId) {
+  if (body.length < 64 * 1024) {
+    return Future.value(parseM3u(body, sourceId: sourceId));
+  }
+  return compute(_parseM3uJob, (body, sourceId));
+}
+
+List<MediaEntry> _parseM3uJob((String, String) job) => parseM3u(job.$1, sourceId: job.$2);
 
 Future<List<MediaEntry>> _loadXtream(UserSource source, {LoadPulse? onPulse}) async {
   onPulse?.call('Giriş doğrulanıyor', 0);
@@ -96,12 +110,21 @@ Future<List<MediaEntry>> _loadXtream(UserSource source, {LoadPulse? onPulse}) as
     }
   }
 
-  final live = await take(_live(base, user, pass, source.id));
-  onPulse?.call('Canlı yayınlar', live.length);
-  final movies = await take(_movies(base, user, pass, source.id));
-  onPulse?.call('Filmler', live.length + movies.length);
-  final series = await take(_series(base, user, pass, source.id));
-  final entries = <MediaEntry>[...live, ...movies, ...series];
+  onPulse?.call('Canlı yayın, film ve diziler', 0);
+  var count = 0;
+  Future<List<MediaEntry>> counted(Future<List<MediaEntry>> pending, String label) async {
+    final list = await take(pending);
+    count += list.length;
+    onPulse?.call(label, count);
+    return list;
+  }
+
+  final parts = await Future.wait([
+    counted(_live(base, user, pass, source.id), 'Canlı yayınlar'),
+    counted(_movies(base, user, pass, source.id), 'Filmler'),
+    counted(_series(base, user, pass, source.id), 'Diziler'),
+  ]);
+  final entries = <MediaEntry>[...parts[0], ...parts[1], ...parts[2]];
   onPulse?.call('İçerikler hazır', entries.length);
   if (entries.isEmpty) {
     final error = failure;
@@ -115,39 +138,71 @@ Future<List<MediaEntry>> _loadXtream(UserSource source, {LoadPulse? onPulse}) as
   return entries;
 }
 
-Future<List<MediaEntry>> _live(Uri base, String user, String pass, String sourceId) async {
-  final list = await fetchJson(xtreamApi(base, user, pass, action: 'get_live_streams'));
-  final categories = await _categoryNames(base, user, pass, 'get_live_categories');
-  return _streams(
-    list,
-    base: base,
-    categories: categories,
-    sourceId: sourceId,
-    section: ShellSection.live,
-    idKey: 'stream_id',
-    fallbackGroup: 'Canlı',
-    urlFor: (id, item, resolved) => _xtreamUrl(base, user, pass, id, item, resolved),
+typedef _Build = List<MediaEntry> Function(dynamic list, Map<String, String> categories);
+
+/// Büyük listeyi indirir, çözme ve kayda dönüştürme işini ayrı iş parçacığında yapar.
+Future<List<MediaEntry>> _listed(Uri base, String user, String pass, String action, String categoryAction, _Build build) async {
+  final names = _categoryNames(base, user, pass, categoryAction);
+  final body = await fetchText(xtreamApi(base, user, pass, action: action));
+  final categories = await names;
+  try {
+    return await compute(_buildJob, (body, categories, build));
+  } catch (_) {
+    throw SourceLoadException('Sunucu yanıtı okunamadı');
+  }
+}
+
+List<MediaEntry> _buildJob((String, Map<String, String>, _Build) job) {
+  return job.$3(jsonDecode(job.$1), job.$2);
+}
+
+Future<List<MediaEntry>> _live(Uri base, String user, String pass, String sourceId) {
+  return _listed(base, user, pass, 'get_live_streams', 'get_live_categories', (list, categories) {
+    return _streams(
+      list,
+      base: base,
+      categories: categories,
+      sourceId: sourceId,
+      section: ShellSection.live,
+      idKey: 'stream_id',
+      fallbackGroup: 'Canlı',
+      urlFor: (id, item, resolved) => _xtreamUrl(base, user, pass, id, item, resolved),
+    );
+  });
+}
+
+Future<List<MediaEntry>> _movies(Uri base, String user, String pass, String sourceId) {
+  return _listed(base, user, pass, 'get_vod_streams', 'get_vod_categories', (list, categories) {
+    return _streams(
+      list,
+      base: base,
+      categories: categories,
+      sourceId: sourceId,
+      section: ShellSection.movies,
+      idKey: 'stream_id',
+      fallbackGroup: 'Filmler',
+      urlFor: (id, item, resolved) => _xtreamUrl(base, user, pass, id, item, resolved),
+    );
+  });
+}
+
+Future<List<MediaEntry>> _series(Uri base, String user, String pass, String sourceId) {
+  return _listed(
+    base,
+    user,
+    pass,
+    'get_series',
+    'get_series_categories',
+    (list, categories) => _seriesFrom(list, base: base, categories: categories, sourceId: sourceId),
   );
 }
 
-Future<List<MediaEntry>> _movies(Uri base, String user, String pass, String sourceId) async {
-  final list = await fetchJson(xtreamApi(base, user, pass, action: 'get_vod_streams'));
-  final categories = await _categoryNames(base, user, pass, 'get_vod_categories');
-  return _streams(
-    list,
-    base: base,
-    categories: categories,
-    sourceId: sourceId,
-    section: ShellSection.movies,
-    idKey: 'stream_id',
-    fallbackGroup: 'Filmler',
-    urlFor: (id, item, resolved) => _xtreamUrl(base, user, pass, id, item, resolved),
-  );
-}
-
-Future<List<MediaEntry>> _series(Uri base, String user, String pass, String sourceId) async {
-  final list = await fetchJson(xtreamApi(base, user, pass, action: 'get_series'));
-  final categories = await _categoryNames(base, user, pass, 'get_series_categories');
+List<MediaEntry> _seriesFrom(
+  dynamic list, {
+  required Uri base,
+  required Map<String, String> categories,
+  required String sourceId,
+}) {
   if (list is! List) {
     return const [];
   }
@@ -512,7 +567,28 @@ int? _asInt(dynamic value) {
   return int.tryParse('$value');
 }
 
+/// Tarayıcı başka sunucuya doğrudan istek atamaz (CORS). Geliştirme sunucusu
+/// tool/web/serve.py aynı adreste /proxy ile isteği iletir.
+Uri webProxied(Uri uri) => Uri.base.resolve('/proxy').replace(queryParameters: {'url': uri.toString()});
+
+Future<String> _fetchTextWeb(Uri uri) async {
+  try {
+    final response = await http.get(webProxied(uri)).timeout(const Duration(seconds: 60));
+    if (response.statusCode >= 400) {
+      throw SourceLoadException('Sunucu yanıt vermedi');
+    }
+    return utf8.decode(response.bodyBytes, allowMalformed: true);
+  } on SourceLoadException {
+    rethrow;
+  } catch (_) {
+    throw SourceLoadException('Liste okunamadı');
+  }
+}
+
 Future<String> fetchText(Uri uri) async {
+  if (kIsWeb) {
+    return _fetchTextWeb(uri);
+  }
   final client = HttpClient();
   client.connectionTimeout = const Duration(seconds: 20);
   try {
@@ -537,8 +613,12 @@ Future<String> fetchText(Uri uri) async {
 }
 
 Future<dynamic> fetchJson(Uri uri) async {
+  final body = await fetchText(uri);
   try {
-    return jsonDecode(await fetchText(uri));
+    if (body.length > 256 * 1024) {
+      return await compute(jsonDecode, body);
+    }
+    return jsonDecode(body);
   } on SourceLoadException {
     rethrow;
   } catch (_) {

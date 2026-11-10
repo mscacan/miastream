@@ -6,7 +6,9 @@
         android:label="Mia Stream"
         android:usesCleartextTraffic="true"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/banner"
+        android:largeHeap="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

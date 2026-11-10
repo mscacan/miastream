@@ -3,7 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+
+import '../playback/source_loader.dart' show webProxied;
 
 const coverAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
@@ -181,6 +184,9 @@ class CoverStore extends ChangeNotifier {
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
       return const _Pull(null, true);
     }
+    if (kIsWeb) {
+      return _downloadWeb(uri);
+    }
     final client = _client ??= HttpClient()
       ..maxConnectionsPerHost = 12
       ..connectionTimeout = const Duration(seconds: 8)
@@ -207,7 +213,25 @@ class CoverStore extends ChangeNotifier {
     }
   }
 
+  Future<_Pull> _downloadWeb(Uri uri) async {
+    try {
+      final response = await http.get(webProxied(uri)).timeout(const Duration(seconds: 20));
+      if (response.statusCode == 404 || response.statusCode == 410) {
+        return const _Pull(null, true);
+      }
+      if (response.statusCode != 200) {
+        return const _Pull(null, false);
+      }
+      return _Pull(response.bodyBytes, false);
+    } catch (_) {
+      return const _Pull(null, false);
+    }
+  }
+
   Future<Directory?> _dir() {
+    if (kIsWeb) {
+      return Future<Directory?>.value(null);
+    }
     final ready = _directory;
     if (ready != null) {
       return Future<Directory?>.value(ready);
@@ -310,11 +334,12 @@ bool _looksLikeImage(Uint8List bytes) {
   return bytes.length > 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[8] == 0x57 && bytes[9] == 0x45;
 }
 
+/// 64 bit FNV-1a. Sabit iki parçadan kurulur; tek parça JavaScript'te derlenmez.
 String _coverName(String url) {
-  var hash = 0xcbf29ce484222325;
+  var hash = (0xcbf29ce4 << 32) | 0x84222325;
   for (final unit in url.codeUnits) {
     hash ^= unit;
-    hash = (hash * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
+    hash = hash * 0x100000001b3;
   }
   return '${hash.toRadixString(16)}_${url.length}.img';
 }

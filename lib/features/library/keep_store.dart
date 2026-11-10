@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/web_disk.dart';
 import '../playback/media_entry.dart';
 
 class UserShelf {
@@ -212,6 +213,17 @@ class KeepStore extends ChangeNotifier {
       return;
     }
     _loaded = true;
+    if (kIsWeb) {
+      try {
+        final body = WebDisk.read('izleme.json');
+        final decoded = body == null ? null : jsonDecode(body);
+        if (decoded is Map) {
+          _readBag(decoded, merge: false);
+          notifyListeners();
+        }
+      } catch (_) {}
+      return;
+    }
     try {
       final support = await getApplicationSupportDirectory();
       final file = File('${support.path}/izleme.json');
@@ -241,6 +253,10 @@ class KeepStore extends ChangeNotifier {
   }
 
   Future<void> _save() async {
+    if (kIsWeb) {
+      WebDisk.write('izleme.json', jsonEncode(_toJson()));
+      return;
+    }
     try {
       final support = await getApplicationSupportDirectory();
       final file = File('${support.path}/izleme.json');

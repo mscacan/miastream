@@ -22,13 +22,13 @@ class MiaPalette {
   final String label;
 
   static const sinema = MiaPalette(
-    background: Color(0xFF141414),
-    surface: Color(0xFF141414),
-    card: Color(0xFF181818),
+    background: Color(0xFF0B0B0F),
+    surface: Color(0xFF131318),
+    card: Color(0xFF1B1B21),
     accent: Color(0xFFE50914),
     glow: Color(0xFF5C121C),
-    muted: Color(0xFFB3B3B3),
-    line: Color(0xFF2A2A2A),
+    muted: Color(0xFFA8A8B3),
+    line: Color(0xFF26262E),
     label: 'Sinema',
   );
 
@@ -183,6 +183,11 @@ abstract final class MiaType {
 }
 
 abstract final class MiaTheme {
+  /// Beyaz zeminli düğmelerde beyaz halka görünmez; kumanda odağı kırmızı.
+  static final lightFocusRing = WidgetStateBorderSide.resolveWith(
+    (states) => states.contains(WidgetState.focused) ? const BorderSide(color: Color(0xFFE50914), width: 3) : null,
+  );
+
   static ThemeData data(MiaPalette palette) {
     final colors = MiaColors.fromPalette(palette);
     final scheme = ColorScheme.dark(
@@ -191,13 +196,30 @@ abstract final class MiaTheme {
       surface: palette.surface,
       onSurface: Colors.white,
     );
+    final focusRing = WidgetStateBorderSide.resolveWith(
+      (states) => states.contains(WidgetState.focused) ? const BorderSide(color: Colors.white, width: 3) : null,
+    );
+    final focusFill = WidgetStateProperty.resolveWith<Color?>(
+      (states) => states.contains(WidgetState.focused) ? const Color(0x33FFFFFF) : null,
+    );
     return ThemeData(
       brightness: Brightness.dark,
       scaffoldBackgroundColor: palette.background,
       colorScheme: scheme,
       useMaterial3: true,
       fontFamily: 'Manrope',
+      focusColor: const Color(0x40FFFFFF),
       extensions: [colors],
+      iconButtonTheme: IconButtonThemeData(
+        style: ButtonStyle(side: focusRing, overlayColor: focusFill),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: ButtonStyle(side: focusRing, overlayColor: focusFill),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: ButtonStyle(side: focusRing),
+      ),
+      listTileTheme: const ListTileThemeData(selectedColor: Colors.white),
       textTheme: TextTheme(
         headlineLarge: MiaType.outfit(36, 620, letterSpacing: -0.8, height: 1.05),
         headlineMedium: MiaType.outfit(28, 600, letterSpacing: -0.4),
@@ -212,7 +234,7 @@ abstract final class MiaTheme {
         foregroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
-        titleTextStyle: MiaType.outfit(18, 600),
+        titleTextStyle: MiaType.outfit(18, 600, color: Colors.white),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -221,7 +243,7 @@ abstract final class MiaTheme {
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
           textStyle: MiaType.manrope(15, 700),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
+        ).copyWith(side: focusRing),
       ),
       dialogTheme: DialogThemeData(backgroundColor: palette.surface),
       inputDecorationTheme: InputDecorationTheme(

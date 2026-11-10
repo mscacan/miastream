@@ -7,8 +7,8 @@ import '../library/user_library.dart';
 import '../library/keep_store.dart';
 import '../playback/media_entry.dart';
 import '../shell/shell_section.dart';
-import 'cover_art.dart';
 import 'featured_slide.dart';
+import 'mia_rail.dart';
 
 class HomeRail {
   const HomeRail(this.id, this.title, this.empty);
@@ -95,13 +95,14 @@ class _HomePageState extends State<HomePage> {
         ];
         final phone = miaIsPhone(context);
         final wide = !phone;
+        final top = MediaQuery.paddingOf(context).top + (phone ? 100 : 76);
         final skip = widget.keeps.doneIds();
         final recent = widget.keeps.recentIn(pool);
         final favorites = widget.keeps.favoritesIn(pool);
         final paused = widget.keeps.unfinishedEpisodes(pool);
         if (pool.isEmpty) {
           return ListView(
-            padding: EdgeInsets.fromLTRB(wide ? 48 : 20, 8, wide ? 48 : 20, phone ? 96 : 28),
+            padding: EdgeInsets.fromLTRB(wide ? 48 : 20, top, wide ? 48 : 20, phone ? 96 : 28),
             children: [
               _EmptyHome(onAdd: widget.onAdd),
             ],
@@ -111,30 +112,82 @@ class _HomePageState extends State<HomePage> {
           for (final id in look.homeRails)
             if (homeRailById(id) != null) homeRailById(id)!,
         ];
+        final hero = rails.any((rail) => rail.id == 'featured')
+            ? _picks('featured', pool, recent, favorites, paused, skip).take(6).toList()
+            : const <_Pick>[];
+        final top10 = offeredTitles([
+          for (final entry in pool)
+            if ((entry.section == ShellSection.movies || entry.section == ShellSection.series) &&
+                !skip.contains(entry.id))
+              entry,
+        ]).take(10).toList();
+        final gutter = RailMetrics.of(context).gutter;
         return ListView(
-          padding: EdgeInsets.fromLTRB(wide ? 48 : 16, wide ? 8 : 8, wide ? 48 : 16, phone ? 108 : 32),
+          padding: EdgeInsets.only(bottom: phone ? 108 : 40),
           children: [
-            if (_editing) ...[
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(onPressed: _toggleEdit, child: const Text('Bitti')),
+            if (hero.isEmpty || _editing) SizedBox(height: top),
+            if (_editing)
+              Padding(
+                padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    TextButton(onPressed: _toggleEdit, child: const Text('Bitti')),
+                    const HomeRailEditor(),
+                  ],
+                ),
               ),
-              const HomeRailEditor(),
-              const SizedBox(height: 16),
-            ],
-            for (final rail in rails)
-              _RailBlock(
+            if (hero.isNotEmpty && !_editing)
+              FeaturedSlide(
+                entries: [for (final pick in hero) pick.entry],
                 library: widget.library,
-                rail: rail,
-                picks: _picks(rail.id, pool, recent, favorites, paused, skip),
-                onPlay: widget.onPlay,
-                onResume: widget.onResume,
-                showEmpty: _editing,
+                billboard: true,
+                fullBleed: true,
+                onPlay: (entry) {
+                  for (final pick in hero) {
+                    if (pick.entry.id == entry.id) {
+                      _RailBlock.openPick(pick, widget.onPlay, widget.onResume);
+                      return;
+                    }
+                  }
+                },
               ),
+            for (final (index, rail) in rails.indexed)
+              if (rail.id != 'featured') ...[
+                _RailBlock(
+                  library: widget.library,
+                  rail: rail,
+                  picks: _picks(rail.id, pool, recent, favorites, paused, skip),
+                  onPlay: widget.onPlay,
+                  onResume: widget.onResume,
+                  showEmpty: _editing,
+                ),
+                if (top10.length >= 5 && index == _top10Slot(rails))
+                  MiaRail(
+                    title: 'Bugünün Top 10 listesi',
+                    height: RailMetrics.of(context).poster * 1.5,
+                    itemCount: top10.length,
+                    itemBuilder: (context, i) {
+                      final entry = top10[i];
+                      return RankedTile(
+                        rank: i + 1,
+                        tile: MiaTile(
+                          title: entry.title,
+                          artwork: entry.artwork,
+                          width: RailMetrics.of(context).poster,
+                          onTap: () => widget.onPlay(entry),
+                        ),
+                      );
+                    },
+                  ),
+              ],
             if (rails.isEmpty)
-              Text(
-                'Tablo kalmadı. Düzenle ile yeniden ekleyebilirsin.',
-                style: MiaType.manrope(14, 500, color: const Color(0xFFB3B3B3)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: gutter),
+                child: Text(
+                  'Tablo kalmadı. Düzenle ile yeniden ekleyebilirsin.',
+                  style: MiaType.manrope(14, 500, color: const Color(0xFFB3B3B3)),
+                ),
               ),
           ],
         );
@@ -212,7 +265,11 @@ class _RailBlock extends StatelessWidget {
   final void Function(MediaEntry entry, int? season, int? number) onResume;
   final bool showEmpty;
 
-  void _open(_Pick pick) {
+  static void openPick(
+    _Pick pick,
+    ValueChanged<MediaEntry> onPlay,
+    void Function(MediaEntry entry, int? season, int? number) onResume,
+  ) {
     if (pick.episode) {
       onResume(pick.entry, pick.season, pick.number);
       return;
@@ -225,61 +282,58 @@ class _RailBlock extends StatelessWidget {
     if (picks.isEmpty && !showEmpty) {
       return const SizedBox.shrink();
     }
-    final featured = rail.id == 'featured' && picks.isNotEmpty;
-    final shown = featured ? (picks.length > 8 ? picks.sublist(0, 8) : picks) : picks;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 22),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!featured) Text(rail.title, style: MiaType.outfit(20, 700, color: Colors.white)),
-          if (!featured) const SizedBox(height: 10),
-          if (picks.isEmpty)
-            Text(rail.empty, style: MiaType.manrope(13, 500, color: const Color(0xFFB3B3B3)))
-          else if (featured)
-            FeaturedSlide(
-              entries: [for (final pick in shown) pick.entry],
-              library: library,
-              billboard: true,
-              onPlay: (entry) {
-                for (final pick in shown) {
-                  if (pick.entry.id == entry.id) {
-                    _open(pick);
-                    return;
-                  }
-                }
-              },
-            )
-          else
-            Builder(
-              builder: (context) {
-                final wide = MediaQuery.sizeOf(context).width >= 800;
-                final live = rail.id == 'live';
-                final big = wide && !live;
-                return SizedBox(
-                  height: live ? 112 : (big ? 420 : 210),
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: shown.length > 18 ? 18 : shown.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final pick = shown[index];
-                      return PosterCard(
-                        title: pick.label,
-                        artwork: pick.entry.artwork,
-                        titleBelow: live,
-                        width: live ? 168 : (big ? 224 : 112),
-                        onTap: () => _open(pick),
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
+    final metrics = RailMetrics.of(context);
+    if (picks.isEmpty) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(metrics.gutter, 0, metrics.gutter, 22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(rail.title, style: MiaType.outfit(20, 700, color: Colors.white)),
+            const SizedBox(height: 6),
+            Text(rail.empty, style: MiaType.manrope(13, 500, color: const Color(0xFFB3B3B3))),
+          ],
+        ),
+      );
+    }
+    final shown = picks.length > 18 ? picks.sublist(0, 18) : picks;
+    final live = rail.id == 'live';
+    final resume = rail.id == 'paused';
+    final shape = live ? TileShape.live : (resume ? TileShape.landscape : TileShape.poster);
+    final width = live ? metrics.live : (resume ? metrics.landscape : metrics.poster);
+    final sample = MiaTile(title: '', width: width, shape: shape);
+    return MiaRail(
+      title: rail.title,
+      height: sample.height,
+      itemCount: shown.length,
+      itemBuilder: (context, index) {
+        final pick = shown[index];
+        final entry = pick.entry;
+        return MiaTile(
+          title: pick.label,
+          artwork: resume ? (entry.backdrop ?? entry.artwork) : entry.artwork,
+          width: width,
+          shape: shape,
+          note: pick.episode
+              ? [
+                  if (pick.season != null) 'S${pick.season}',
+                  if (pick.number != null) 'B${pick.number}',
+                ].join(' · ')
+              : null,
+          onTap: () => openPick(pick, onPlay, onResume),
+        );
+      },
     );
   }
+}
+
+int _top10Slot(List<HomeRail> rails) {
+  for (final (index, rail) in rails.indexed) {
+    if (rail.id != 'featured') {
+      return index;
+    }
+  }
+  return -1;
 }
 
 class HomeRailEditor extends StatelessWidget {
@@ -408,7 +462,7 @@ class _EmptyHome extends StatelessWidget {
               backgroundColor: Colors.white,
               foregroundColor: Colors.black,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
+            ).copyWith(side: MiaTheme.lightFocusRing),
             onPressed: onAdd,
             child: Text('Kaynak ekle', style: MiaType.manrope(14, 700, color: Colors.black)),
           ),

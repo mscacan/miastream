@@ -222,7 +222,7 @@ class _BotPageState extends State<BotPage> {
             foregroundColor: Colors.black,
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
+          ).copyWith(side: MiaTheme.lightFocusRing),
           onPressed: _ask,
           child: Text('Uygun olanı bul', style: MiaType.manrope(16, 700, color: Colors.black)),
         ),

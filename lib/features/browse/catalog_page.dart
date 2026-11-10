@@ -14,6 +14,7 @@ import 'catalog_rails.dart';
 import 'cover_art.dart';
 import 'cover_store.dart';
 import 'featured_slide.dart';
+import 'mia_rail.dart';
 import 'perde_view.dart';
 import 'poster_ink.dart';
 
@@ -86,56 +87,15 @@ class CatalogPage extends StatelessWidget {
             if (topInset > 0) SliverToBoxAdapter(child: SizedBox(height: topInset)),
             if (!phone && onFilter != null)
               const SliverToBoxAdapter(child: SizedBox(height: 76)),
-            if (!phone && onFilter != null)
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 44,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 48),
-                    children: [
-                      for (final item in [ShellSection.live, ShellSection.series, ShellSection.movies, ShellSection.bot])
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(item.label),
-                            selected: item == section,
-                            showCheckmark: false,
-                            onSelected: (_) => onFilter!(item),
-                            labelStyle: MiaType.manrope(13, 650, color: Colors.white),
-                            selectedColor: const Color(0xFF3A3A3A),
-                            backgroundColor: const Color(0xFF2A2A2A),
-                            side: const BorderSide(color: Color(0xFF3A3A3A)),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+            SliverToBoxAdapter(
+              child: _PageHead(
+                section: section,
+                count: entries.length,
+                phone: phone,
+                voice: section == ShellSection.movies || section == ShellSection.series ? voice : null,
+                onVoice: (value) => LookScope.of(context).setCatalogVoice(value),
               ),
-            if (section == ShellSection.movies || section == ShellSection.series)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(phone ? 16 : 48, 8, 16, 0),
-                  child: Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final item in [('either', 'Tümü'), ('dub', 'Türkçe dublaj'), ('original', 'Orijinal')])
-                        ChoiceChip(
-                          label: Text(item.$2),
-                          selected: voice == item.$1,
-                          showCheckmark: false,
-                          onSelected: (_) => LookScope.of(context).setCatalogVoice(item.$1),
-                          labelStyle: MiaType.manrope(13, 650, color: Colors.white),
-                          selectedColor: const Color(0xFF3A3A3A),
-                          backgroundColor: const Color(0xFF2A2A2A),
-                          side: const BorderSide(color: Color(0xFF3A3A3A)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
+            ),
             if (entries.isEmpty)
               SliverToBoxAdapter(
                 child: _Hero(
@@ -281,16 +241,6 @@ String? _channelNote(MediaEntry entry) {
   return bits.isEmpty ? null : bits.join(' · ');
 }
 
-String? _seriesNote(MediaEntry entry) {
-  final bits = <String>[
-    if (entry.rating != null && entry.rating!.trim().isNotEmpty) entry.rating!.trim(),
-    if (entry.genre != null && entry.genre!.trim().isNotEmpty) entry.genre!.trim(),
-    if (entry.group.trim().isNotEmpty && entry.group != 'Diziler' && entry.group != 'Kayıtlar') entry.group.trim(),
-    if (voiceLabel(entry) != null) voiceLabel(entry)!,
-  ];
-  return bits.isEmpty ? null : bits.take(3).join(' · ');
-}
-
 String? _leftAt(KeepStore keeps, MediaEntry entry) {
   for (final item in keeps.unfinishedEpisodes([entry])) {
     if (item.season != null || item.number != null) {
@@ -377,15 +327,12 @@ class _LiveSeriesRowState extends State<_LiveSeriesRow> {
 
   @override
   Widget build(BuildContext context) {
-    final series = [
-      for (final entry in widget.library.entries)
-        if (entry.section == ShellSection.series) entry,
-    ];
-    final watched = widget.keeps.recentIn(series);
-    final rows = watched.take(5).toList();
-    if (rows.length < 5) {
-      for (final item in spotlight(series, ShellSection.series, shift: _shift)) {
-        if (rows.length >= 5) {
+    final channels = widget.library.entriesFor(ShellSection.live);
+    final watched = widget.keeps.recentIn(channels);
+    final rows = watched.take(12).toList();
+    if (rows.length < 12) {
+      for (final item in spotlight(channels, ShellSection.live, shift: _shift)) {
+        if (rows.length >= 12) {
           break;
         }
         if (rows.every((entry) => entry.id != item.id)) {
@@ -397,11 +344,11 @@ class _LiveSeriesRowState extends State<_LiveSeriesRow> {
       return const SizedBox.shrink();
     }
     return _EntryStrip(
-      title: watched.isEmpty ? 'Öne çıkan diziler' : 'Son izlediğin diziler',
+      title: 'Öne çıkan TV kanalları',
       entries: rows,
       onPlay: widget.onPlay,
-      contain: false,
-      noteFor: _seriesNote,
+      contain: true,
+      noteFor: _channelNote,
     );
   }
 }
@@ -441,7 +388,7 @@ class _Hero extends StatelessWidget {
       child: Stack(
             fit: StackFit.expand,
             children: [
-              const ColoredBox(color: Color(0xFF141414)),
+              const ColoredBox(color: Color(0xFF0B0B0F)),
               if (artwork != null && !live)
                 CoverImage(url: artwork, fit: BoxFit.cover),
               if (artwork != null && live)
@@ -527,7 +474,7 @@ class _Hero extends StatelessWidget {
                               foregroundColor: Colors.black,
                               padding: EdgeInsets.symmetric(horizontal: wide ? 22 : 16, vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                            ),
+                            ).copyWith(side: MiaTheme.lightFocusRing),
                             onPressed: () => onPlay(playable),
                             icon: const Icon(Icons.play_arrow, size: 28),
                             label: Text('Oynat', style: MiaType.manrope(16, 700, color: Colors.black)),
@@ -630,59 +577,27 @@ class _EntryStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 800;
-    final gutter = wide ? 48.0 : 16.0;
-    final cardWidth = contain ? 168.0 : (wide ? 176.0 : 118.0);
-    final rowHeight = contain ? 120.0 : (wide ? 250.0 : 176.0);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 8),
-            child: Text(title, style: MiaType.outfit(wide ? 22 : 18, 700, color: Colors.white)),
-          ),
-          SizedBox(
-            height: rowHeight,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: EdgeInsets.symmetric(horizontal: gutter),
-              itemCount: entries.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 6),
-              itemBuilder: (context, index) {
-                final entry = entries[index];
-                final card = PosterCard(
-                  title: entry.title,
-                  artwork: entry.artwork,
-                  titleBelow: contain,
-                  width: cardWidth,
-                  note: noteFor?.call(entry),
-                  progress: progressFor?.call(entry),
-                  onTap: () => onPlay(entry),
-                );
-                if (!ranked) {
-                  return card;
-                }
-                return Row(
-                  children: [
-                    SizedBox(
-                      width: wide ? 64 : 44,
-                      child: Text(
-                        '${index + 1}',
-                        textAlign: TextAlign.right,
-                        style: MiaType.outfit(wide ? 56 : 40, 700, color: const Color(0xFF4A4A4A)),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    card,
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+    final metrics = RailMetrics.of(context);
+    final shape = contain ? TileShape.live : TileShape.poster;
+    final width = contain ? metrics.live : metrics.poster;
+    final height = MiaTile(title: '', width: width, shape: shape).height;
+    return MiaRail(
+      title: title,
+      height: height,
+      itemCount: entries.length,
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        final tile = MiaTile(
+          title: entry.title,
+          artwork: entry.artwork,
+          width: width,
+          shape: shape,
+          note: noteFor?.call(entry),
+          progress: progressFor?.call(entry),
+          onTap: () => onPlay(entry),
+        );
+        return ranked ? RankedTile(rank: index + 1, tile: tile) : tile;
+      },
     );
   }
 }
@@ -722,8 +637,9 @@ class _FrameStrip extends StatelessWidget {
                 final frame = spot?.frame;
                 final file = frame == null ? null : File(frame);
                 final seen = (spot?.ms ?? 0) > 8000;
-                return GestureDetector(
+                return FocusFrame(
                   onTap: () => onPlay(entry),
+                  radius: 8,
                   child: SizedBox(
                     width: 148,
                     child: Column(
@@ -877,12 +793,11 @@ class _CategoryTile extends StatelessWidget {
     return SizedBox(
       width: width,
       height: height,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Ink(
+      child: FocusFrame(
+        onTap: onTap,
+        radius: 14,
+        scale: 1.03,
+        child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
               gradient: LinearGradient(
@@ -905,7 +820,6 @@ class _CategoryTile extends StatelessWidget {
               ),
             ),
           ),
-        ),
       ),
     );
   }
@@ -927,9 +841,9 @@ class _CategoryShelf extends StatelessWidget {
     final phone = miaIsPhone(context);
     final columns = phone ? 3 : 6;
     return Scaffold(
-      backgroundColor: const Color(0xFF141414),
+      backgroundColor: const Color(0xFF0B0B0F),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF141414),
+        backgroundColor: const Color(0xFF0B0B0F),
         foregroundColor: Colors.white,
         title: Text(title, style: MiaType.outfit(18, 700, color: Colors.white)),
       ),
@@ -1020,4 +934,108 @@ String _emptyLine(ShellSection section) {
     ShellSection.movies => 'Filmler senin listenden gelir.',
     _ => 'Kendi listen buraya gelir.',
   };
+}
+
+class _PageHead extends StatelessWidget {
+  const _PageHead({
+    required this.section,
+    required this.count,
+    required this.phone,
+    required this.voice,
+    required this.onVoice,
+  });
+
+  final ShellSection section;
+  final int count;
+  final bool phone;
+  final String? voice;
+  final ValueChanged<String> onVoice;
+
+  @override
+  Widget build(BuildContext context) {
+    final gutter = RailMetrics.of(context).gutter;
+    final unit = switch (section) {
+      ShellSection.live => 'kanal',
+      ShellSection.series => 'dizi',
+      _ => 'film',
+    };
+    return Padding(
+      padding: EdgeInsets.fromLTRB(gutter, phone ? 4 : 10, gutter, 14),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.end,
+        spacing: 18,
+        runSpacing: 10,
+        children: [
+          if (!phone)
+            Text(
+              section.label,
+              style: MiaType.outfit(38, 800, height: 1, letterSpacing: -1, color: Colors.white),
+            ),
+          if (count > 0)
+            Padding(
+              padding: EdgeInsets.only(bottom: phone ? 0 : 5),
+              child: Text(
+                '$count $unit',
+                style: MiaType.manrope(13, 700, color: const Color(0xFF8C8C96)),
+              ),
+            ),
+          if (voice != null)
+            Padding(
+              padding: EdgeInsets.only(bottom: phone ? 0 : 2),
+              child: _Segments(
+                value: voice!,
+                items: const [('either', 'Tümü'), ('dub', 'Türkçe dublaj'), ('original', 'Orijinal')],
+                onChanged: onVoice,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Segments extends StatelessWidget {
+  const _Segments({required this.value, required this.items, required this.onChanged});
+
+  final String value;
+  final List<(String, String)> items;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF17171C),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFF2A2A33)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final item in items)
+            Material(
+              color: item.$1 == value ? Colors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(18),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () => onChanged(item.$1),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  child: Text(
+                    item.$2,
+                    style: MiaType.manrope(
+                      13,
+                      750,
+                      height: 1.2,
+                      color: item.$1 == value ? Colors.black : const Color(0xFFC9C9D1),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

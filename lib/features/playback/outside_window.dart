@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import '../../core/web_full.dart';
+
 /// Sistem küçük penceresi. macOS'ta yüzen panel, Android'de etkinlik, iOS'ta sistem penceresi.
 class OutsideWindow {
   static const _channel = MethodChannel('mias/outside');
@@ -36,6 +38,10 @@ class OutsideWindow {
   }
 
   static Future<bool> full() async {
+    final web = await toggleWebFull();
+    if (web != null) {
+      return web;
+    }
     try {
       final on = await _channel.invokeMethod<bool>('full');
       return on ?? false;

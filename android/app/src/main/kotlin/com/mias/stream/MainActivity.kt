@@ -1,6 +1,10 @@
 package com.mias.stream
 
 import android.app.PictureInPictureParams
+import android.app.UiModeManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.util.Rational
 import android.view.View
@@ -39,10 +43,20 @@ class MainActivity : FlutterActivity() {
                         runOnUiThread { hideSystemBars(filled) }
                         result.success(filled)
                     }
+                    "isTv" -> result.success(isTelevision())
                     "exit" -> result.success(null)
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun isTelevision(): Boolean {
+        val modes = getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+        if (modes?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION) {
+            return true
+        }
+        return packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+            !packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
     }
 
     private fun hideSystemBars(hide: Boolean) {
